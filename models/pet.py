@@ -401,8 +401,11 @@ class BasePETCount(nn.Module):
 
         # prediction
         points_queries = pqs[1]
-        outputs = self.predict_hxn(samples, points_queries, hs, **kwargs)       # constrain output
-        # outputs = self.predict(samples, points_queries, hs, **kwargs)
+        if kwargs['predict'] == 'hxn':
+            outputs = self.predict_hxn(samples, points_queries, hs, **kwargs)       # constrain output
+        elif kwargs['predict'] == 'origin':
+            outputs = self.predict(samples, points_queries, hs, **kwargs)
+            
         return outputs
     
 
@@ -415,6 +418,8 @@ class PET(nn.Module):
         self.backbone = backbone
         self.backbone_type = args.backbone
         self.encoder_free = args.encoder_free
+        
+        self.predict = args.predict
         
         # zlt: object query in decoder from box-detr
         self.opt_query_decoder = args.opt_query_decoder
@@ -590,6 +595,9 @@ class PET(nn.Module):
         # feature projection
         features['4x'] = NestedTensor(self.input_proj[0](features['4x'].tensors), features['4x'].mask)  # channels to hidden_dim
         features['8x'] = NestedTensor(self.input_proj[1](features['8x'].tensors), features['8x'].mask)
+        
+        # prediction head
+        kwargs['predict'] = self.predict
 
         # forward
         if 'train' in kwargs:
