@@ -11,27 +11,6 @@ def inverse_sigmoid(x, eps=1e-3):
     x2 = (1 - x).clamp(min=eps)
     return torch.log(x1/x2)
 
-def generate_probability_map(points, H, W, sigma):
-    """
-    probability map generation
-    """
-    device = points.device
-    prob_map = torch.zeros((H, W), device=device)
-
-    grid_y, grid_x = torch.meshgrid(
-        torch.arange(H, device=device),
-        torch.arange(W, device=device),
-        indexing='ij'
-    )
-    grid_x = grid_x.float()
-    grid_y = grid_y.float()
-
-    for point in points:
-        mu_x, mu_y = point[0], point[1]
-        gaussian = torch.exp(-((grid_x - mu_x) ** 2 + (grid_y - mu_y) ** 2) / (2 * sigma ** 2))
-        prob_map = torch.maximum(prob_map, gaussian)
-        
-    return prob_map
 
 class HungarianMatcher(nn.Module):
     """
@@ -90,20 +69,6 @@ class HungarianMatcher(nn.Module):
         
         out_points_abs[:,0] *= img_h
         out_points_abs[:,1] *= img_w
-        
-        # d2cnet: probablity map
-        # it is not implemented like this
-        # opt_loss = 'normal'
-        # # opt_loss = 'normal'
-        
-        # if opt_loss == 'probablity':
-        #     sigma = 3
-        #     pred_prob_map = generate_probability_map(out_points_abs, img_h, img_w, sigma)
-        #     gt_prob_map = generate_probability_map(tgt_points.to(device), img_h, img_w, sigma)
-        #     diff = pred_prob_map - gt_prob_map
-        #     cost_point = (diff ** 2).mean()
-        # else:
-        #     cost_point = torch.cdist(out_points_abs, tgt_points.to(out_points_abs.device), p=2)
         
         cost_point = torch.cdist(out_points_abs, tgt_points.to(out_points_abs.device), p=2)
         

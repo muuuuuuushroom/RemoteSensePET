@@ -80,11 +80,11 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
         # draw point-query
         for i, q in enumerate(queries[idx]):
             sample_vis = cv2.circle(
-                sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
+                sample_vis, (int(q[1]*w), int(q[0]*h)), size, (0, 255, 255), -1
                 )
             
             # draw line between query and pred
-            q_x, q_y = int(q[1]), int(q[0])
+            q_x, q_y = int(q[1]*w), int(q[0]*h)
             p_x, p_y = int(pred[idx][i][1]), int(pred[idx][i][0])
             overlay = sample_vis.copy()
             cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
