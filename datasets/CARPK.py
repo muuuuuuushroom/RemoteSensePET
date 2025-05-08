@@ -64,11 +64,11 @@ class SHA(Dataset):
         self.patch_size = 256
         
         self.category=category
-        self.test_str='padding' 
+        self.test_str=args.eval_pad
         # 'resize'
         # =args.test_str
         
-        self.test_robust=None #'direction'  # dense, scale
+        self.test_robust=args.eval_robust #'direction'  # dense, scale
         self.seed=42
 
         # training process
@@ -144,9 +144,11 @@ class SHA(Dataset):
                 img, points, bboxs, patch_size=self.patch_size, category=self.category
             )
         else:
-            if self.test_str == 'padding':
+            if self.test_str == 'padding_center':
                 # img, points, bboxs = resize_padding(img, points, bboxs, self.category)
                 img, points, bboxs = resize_with_padding_center(img, points, bboxs, self.test_robust, index)
+            elif self.test_str == 'padding':
+                img, points, bboxs = resize_padding(img, points, bboxs, self.category)
             elif self.test_str == 'resize':
                 img, points, bboxs = resize(img, points, bboxs, self.category)
                 
@@ -404,6 +406,8 @@ def build(image_set, args):
     )
 
     data_root = args.data_path
+    args.eval_pad = 'padding_center' if args.eval_pad is None else args.eval_pad
+    
     if image_set == "train":
         train_set = SHA(
             data_root,
