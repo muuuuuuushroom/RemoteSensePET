@@ -12,8 +12,8 @@ data_path = {
     'RTC': '/data/zlt/PET/RTC/data/RTC',
     'People': '/data/zlt/PET/RTC/data/People',
     
-    'Ship': '/data/slcao_data/zlt_pet_rscount_data/Ship',
-    'Car': '/data/slcao_data/zlt_pet_rscount_data/Car',
+    'Ship': '/data/zlt/datasets/Ship',
+    'Car': '/data/zlt/datasets/Car',
     
     'CORN': '/data/zlt/PET/origin_pet/PET/data/dataset_corn',
 }

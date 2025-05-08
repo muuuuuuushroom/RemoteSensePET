@@ -30,7 +30,7 @@ class DeNormalize(object):
         return tensor
 
 
-def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=None):
+def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=None, args=None):
     """                         # pred point & query
     Visualize predictions
     """
@@ -79,12 +79,17 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
 
         # draw point-query
         for i, q in enumerate(queries[idx]):
+            
+            if args.predict == 'origin':
+                q[1] *= w
+                q[0] *= h
+            
             sample_vis = cv2.circle(
-                sample_vis, (int(q[1]*w), int(q[0]*h)), size, (0, 255, 255), -1
+                sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
                 )
             
             # draw line between query and pred
-            q_x, q_y = int(q[1]*w), int(q[0]*h)
+            q_x, q_y = int(q[1]), int(q[0])
             p_x, p_y = int(pred[idx][i][1]), int(pred[idx][i][0])
             overlay = sample_vis.copy()
             cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
@@ -315,7 +320,7 @@ def evaluate(
             )
             
             visualization(
-                samples, targets, [points], outputs_queries, vis_dir, split_map=split_map, gt_cnt=gt_cnt
+                samples, targets, [points], outputs_queries, vis_dir, split_map=split_map, gt_cnt=gt_cnt, args=args
             )
             # if gt_cnt > gt_determined:
             #     visualization(
