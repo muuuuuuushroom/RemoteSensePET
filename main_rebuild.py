@@ -24,15 +24,15 @@ from util.data_aug_zlt import create_hard_case_sampler_train
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
-    parser.add_argument('--cfg', type=str, default='configs_con/test.yaml', 
+    parser.add_argument('--cfg', type=str, default='configs_con/soybeam.yaml', 
                         help='base cfg file for training model')
     
-    parser.add_argument('--save_ckpt_freq', type=int, default=500,
+    parser.add_argument('--save_ckpt_freq', type=int, default=100,
                         help="the frequency to save ckpt")
     # misc parameters
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
-    parser.add_argument('--resume', default='', help='resume from checkpoint')
+    parser.add_argument('--resume', default=None, help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
 

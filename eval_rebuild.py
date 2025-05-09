@@ -45,7 +45,7 @@ def main(args):
     
     if args.dataset_file in ['Ship', 'Car', 'People']:
         from engine_eval import evaluate
-    elif args.dataset_file == 'RTC':
+    elif args.dataset_file in ['RTC', 'SOY']:
         from engine import evaluate
 
     # fix the seed for reproducibility
