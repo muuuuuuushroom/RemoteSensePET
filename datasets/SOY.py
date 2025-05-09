@@ -32,7 +32,7 @@ class SOY(Dataset):
         super().__init__()
         self.root_path = data_root
         
-        dataset_type = "train" if train else "test"
+        dataset_type = "distribution/train_list" if train else "distribution/test_list"
         # dataset_type = "train" if train else "test"
         data_list_path = os.path.join(data_root, dataset_type+'.txt')
         self.data_list = [name.split(' ') for name in open(data_list_path).read().splitlines()]

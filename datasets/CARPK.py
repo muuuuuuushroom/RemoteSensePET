@@ -295,7 +295,7 @@ def resize_padding(img, points, bboxs, category):
 
 def resize_with_padding_center(img, points, bboxs, test_robust, index):
 
-    if test_robust != None:
+    if test_robust != 'None':
         # augmented for evaluating robustness of the model 
         # direction
         random.seed(42 + index)

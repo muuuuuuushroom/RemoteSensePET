@@ -20,8 +20,6 @@ right=100
 all_gt = []
 all_pred = []
 
-mode = 'nohull'
-
 all_gt = []
 all_pred = []
 
@@ -78,13 +76,12 @@ if len(all_gt) > 0 and len(all_pred) > 0:
     plt.ylabel('Predition', fontsize=f_size-4)
     plt.grid(False)
 
-    # stats_text = f'R² = {r2:.3f}\n' #P-value = {p_value:.3e}\nMAE = {mae:.3f}\nBias = {bias:.3f}
-    stats_text = f'$R^2$ = {r2:.3f}\n' if mode == 'nohull' else f'$R^2_{{hull}}$ = {r2:.3f}\n'
+    stats_text = f'$R^2$ = {r2:.3f}\n' 
     plt.text(0.05, 0.75, stats_text, transform=plt.gca().transAxes,
-            bbox=dict(facecolor='none', edgecolor='none'))  # 无边框
+            bbox=dict(facecolor='none', edgecolor='none')) 
     stats_text = f'MAE={mae:.2f}'
     plt.text(0.05, 0.89, stats_text, transform=plt.gca().transAxes,
-            bbox=dict(facecolor='none', edgecolor='none'))  # 无边框
+            bbox=dict(facecolor='none', edgecolor='none')) 
 
     # 显示图形
     plt.savefig(f'/data/zlt/RemoteSensePET/outputs/SOY/r2/point_{left}_t_{right}.pdf')

@@ -5,7 +5,7 @@ lr: 0.0001
 lr_backbone: 0.00001
 weight_decay: 0.0001
 clip_max_norm: 0.1
-batch_size: 64 # 64 should be available on A6000
+batch_size: 32 # 64 should be available on A6000
 epochs: 3000
 seed: 42
 eval_freq: 5
@@ -53,4 +53,4 @@ eval_path: mutilple_128
 matcher_opt: normal
 predict: origin
 
-output_dir: tiny_noencoder_opre
+output_dir: t_noencoder_opre
