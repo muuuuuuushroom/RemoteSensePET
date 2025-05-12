@@ -69,6 +69,7 @@ class SHA(Dataset):
         # =args.test_str
         
         self.test_robust=args.eval_robust #'direction'  # dense, scale
+        print(f'robust testing: {self.test_robust}')
         self.seed=42
 
         # training process
@@ -144,9 +145,17 @@ class SHA(Dataset):
                 img, points, bboxs, patch_size=self.patch_size, category=self.category
             )
         else:
+            # testing robustness components
+            if 'direction' in self.test_robust:
+                img, points, bboxs = dirction_robust(img, points, bboxs, index)
+                
+            # if 'scale' in self.test_robust:
+            #     img, points, bboxs = dirction_robust(img, points, bboxs)
+            
+            # for padding, center by default
             if self.test_str == 'padding_center':
                 # img, points, bboxs = resize_padding(img, points, bboxs, self.category)
-                img, points, bboxs = resize_with_padding_center(img, points, bboxs, self.test_robust, index)
+                img, points, bboxs = resize_with_padding_center(img, points, bboxs)
             elif self.test_str == 'padding':
                 img, points, bboxs = resize_padding(img, points, bboxs, self.category)
             elif self.test_str == 'resize':
@@ -293,73 +302,8 @@ def resize_padding(img, points, bboxs, category):
 
     return result_img, result_points, result_bboxs
 
-def resize_with_padding_center(img, points, bboxs, test_robust, index):
-
-    if test_robust != 'None':
-        # augmented for evaluating robustness of the model 
-        # direction
-        random.seed(42 + index)
-        angle = random.uniform(-30, 30)
-        rotated_img = TF.rotate(img, angle, expand=True)
-        
-        # TF.affine(
-        #         img, 
-        #         angle=angle, 
-        #         translate=[0, 0], 
-        #         scale=1.0, 
-        #         shear=[0, 0],
-        #         fill=(255, 255, 255) 
-        #     )
-        # TF.rotate(img, angle, expand=True)
-        
-        # error happens for the localization of GT points due to the resolution change in TF.rotate as it expands
-        # this does not happen performing affine as it cuts the img, remaining the centre
-        # it is finished. for pytorch uses down-direction y-axis, we have to rotate '-angle' for points and bboxs
-        
-        oldH, oldW = img.shape[-2:]
-        old_cx, old_cy = oldW / 2, oldH / 2
-        newH, newW = rotated_img.shape[-2:]
-        new_cx, new_cy = newW / 2, newH / 2
-
-        offset_x = new_cx - old_cx
-        offset_y = new_cy - old_cy
-        
-        angle_rad = math.radians(-angle) # evil pytorch
-        img = rotated_img
-        
-        if points is not None and len(points) > 0:
-            rotated_points = []
-            for p in points:
-                y, x = p[0], p[1]
-                x_rot = math.cos(angle_rad) * (x - old_cx) - math.sin(angle_rad) * (y - old_cy) + old_cx + offset_x
-                y_rot = math.sin(angle_rad) * (x - old_cx) + math.cos(angle_rad) * (y - old_cy) + old_cy + offset_y
-                rotated_points.append([y_rot, x_rot])
-            result_points = torch.tensor(rotated_points, dtype=torch.float32).numpy()
-        points = result_points
-            
-        if bboxs is not None and len(bboxs) > 0:
-            rotated_bboxs = []
-            for box in bboxs:
-                x1, y1, x2, y2 = box
-                corners = [
-                    (y1, x1),
-                    (y1, x2),
-                    (y2, x2),
-                    (y2, x1),
-                ]
-                rotated_corners = []
-                for y, x in corners:
-                    x_rot = math.cos(angle_rad) * (x - old_cx) - math.sin(angle_rad) * (y - old_cy) + old_cx + offset_x
-                    y_rot = math.sin(angle_rad) * (x - old_cx) + math.cos(angle_rad) * (y - old_cy) + old_cy + offset_y
-                    rotated_corners.append([x_rot, y_rot])
-                rotated_corners = torch.tensor(rotated_corners, dtype=torch.float32)
-                x_min, y_min = rotated_corners.min(dim=0).values
-                x_max, y_max = rotated_corners.max(dim=0).values
-                rotated_bboxs.append([x_min.item(), y_min.item(), x_max.item(), y_max.item()])
-            result_bboxs = torch.tensor(rotated_bboxs, dtype=torch.float32).numpy()
-        bboxs = result_bboxs
-        
-        
+def resize_with_padding_center(img, points, bboxs):
+    
     imgH, imgW = img.shape[-2:]
     patch_h, patch_w = get_patch_size(imgH, imgW)
 
@@ -393,6 +337,74 @@ def resize_with_padding_center(img, points, bboxs, test_robust, index):
         result_bboxs[:, 3] += pad_top     # y2
         
     return result_img, result_points, result_bboxs
+
+
+def dirction_robust(img, points, bboxs, index):
+    # if test_robust != 'None':
+    # augmented for evaluating robustness of the model 
+    # direction
+    random.seed(42 + index)
+    angle = random.uniform(-30, 30)
+    rotated_img = TF.rotate(img, angle, expand=True)
+    
+    # TF.affine(
+    #         img, 
+    #         angle=angle, 
+    #         translate=[0, 0], 
+    #         scale=1.0, 
+    #         shear=[0, 0],
+    #         fill=(255, 255, 255) 
+    #     )
+    # TF.rotate(img, angle, expand=True)
+    
+    # error happens for the localization of GT points due to the resolution change in TF.rotate as it expands
+    # this does not happen performing affine as it cuts the img, remaining the centre
+    # it is finished. for pytorch uses down-direction y-axis, we have to rotate '-angle' for points and bboxs
+    
+    oldH, oldW = img.shape[-2:]
+    old_cx, old_cy = oldW / 2, oldH / 2
+    newH, newW = rotated_img.shape[-2:]
+    new_cx, new_cy = newW / 2, newH / 2
+
+    offset_x = new_cx - old_cx
+    offset_y = new_cy - old_cy
+    
+    angle_rad = math.radians(-angle) # evil pytorch
+    img = rotated_img
+    
+    if points is not None and len(points) > 0:
+        rotated_points = []
+        for p in points:
+            y, x = p[0], p[1]
+            x_rot = math.cos(angle_rad) * (x - old_cx) - math.sin(angle_rad) * (y - old_cy) + old_cx + offset_x
+            y_rot = math.sin(angle_rad) * (x - old_cx) + math.cos(angle_rad) * (y - old_cy) + old_cy + offset_y
+            rotated_points.append([y_rot, x_rot])
+        result_points = torch.tensor(rotated_points, dtype=torch.float32).numpy()
+    points = result_points
+        
+    if bboxs is not None and len(bboxs) > 0:
+        rotated_bboxs = []
+        for box in bboxs:
+            x1, y1, x2, y2 = box
+            corners = [
+                (y1, x1),
+                (y1, x2),
+                (y2, x2),
+                (y2, x1),
+            ]
+            rotated_corners = []
+            for y, x in corners:
+                x_rot = math.cos(angle_rad) * (x - old_cx) - math.sin(angle_rad) * (y - old_cy) + old_cx + offset_x
+                y_rot = math.sin(angle_rad) * (x - old_cx) + math.cos(angle_rad) * (y - old_cy) + old_cy + offset_y
+                rotated_corners.append([x_rot, y_rot])
+            rotated_corners = torch.tensor(rotated_corners, dtype=torch.float32)
+            x_min, y_min = rotated_corners.min(dim=0).values
+            x_max, y_max = rotated_corners.max(dim=0).values
+            rotated_bboxs.append([x_min.item(), y_min.item(), x_max.item(), y_max.item()])
+        result_bboxs = torch.tensor(rotated_bboxs, dtype=torch.float32).numpy()
+    bboxs = result_bboxs
+    
+    return rotated_img, result_points, result_bboxs
 
 
 def build(image_set, args):
