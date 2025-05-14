@@ -2,3 +2,5 @@ data
 log_vis
 output_nohup
 outputs
+__pycache__/
+*.py[cod]
