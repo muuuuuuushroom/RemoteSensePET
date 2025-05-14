@@ -2,9 +2,9 @@
 
 LOGFILE="output_nohup/robust_eval.log"
 
-> "$LOGFILE"
+mkdir -p output_nohup
 
-for robust_para in $(awk 'BEGIN{for(i=0.2;i<=2.4;i+=0.1) printf "%.1f ", i}'); do
+for robust_para in $(awk 'BEGIN{for(i=2.4;i<=3.0;i+=0.1) printf "%.1f ", i}'); do
     echo "Running eval with robust_para=${robust_para}" | tee -a "$LOGFILE"
 
     CUDA_VISIBLE_DEVICES=3 python eval_rebuild.py \

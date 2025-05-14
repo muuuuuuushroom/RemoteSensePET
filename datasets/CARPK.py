@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 
 import torchvision.transforms.functional as TF
 import math
+import h5py
 
 warnings.filterwarnings("ignore")
 
@@ -182,6 +183,14 @@ class SHA(Dataset):
 
         if not self.train:
             target["image_path"] = img_path
+            
+        if self.train:
+            h5_path = img_path.replace('train_data', 'prob_map_dyna_SAE') .replace('.jpg', '.h5')
+            with h5py.File(h5_path, 'r') as hf:
+                probability = np.array(hf['density'])
+                probability = torch.from_numpy(density).float().unsqueeze(0)  # [1, H, W]
+            
+            return img, target, probability
 
         return img, target
 
