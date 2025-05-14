@@ -1,27 +1,23 @@
 import os
+import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import r2_score
-import re
-import os
-import re
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 from sklearn.metrics import r2_score, mean_absolute_error
 from scipy.stats import pearsonr, linregress
 
-folder_path = '/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder/vis_resize'
+folder_path = '/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/vis_ckpt172'
 
 left=0
-right=100
+right=1000
 
 all_gt = []
 all_pred = []
 
 all_gt = []
 all_pred = []
+
+results=[]
 
 pattern = re.compile(r'gt(\d+)_pred(\d+)')
 
@@ -34,9 +30,19 @@ for filename in os.listdir(folder_path):
         if left < gt_value < right:
             all_gt.append(gt_value)
             all_pred.append(pred_value)
+        filename = filename.split('_gt')[0]
+        results.append({
+                'Filename': filename,
+                'GT Value': gt_value,
+                'Pred Value': pred_value
+            })
 
 all_gt = np.array(all_gt)
 all_pred = np.array(all_pred)
+
+df_results = pd.DataFrame(results)
+excel_output_path = '/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/r2/file_gt_pred_data.xlsx'
+df_results.to_excel(excel_output_path, index=False)
 
 # 确保我们有足够的数据点来计算统计量
 if len(all_gt) > 0 and len(all_pred) > 0:
@@ -71,7 +77,8 @@ if len(all_gt) > 0 and len(all_pred) > 0:
     y_vals = slope * x_vals + intercept
     plt.plot(x_vals, y_vals, color='#9E0142', label=f'y = {slope:.2f}x + {intercept:.2f}')
 
-    # plt.title('Number of Post-Harvest Residual Rice Tillers', fontsize=f_size)
+    plt.title(f'$R^2$ for GT ranging from {left} to {right}', fontsize=f_size)
+    # plt.title(f'$R^2$ for all', fontsize=f_size)
     plt.xlabel('Ground Truth', fontsize=f_size-4)
     plt.ylabel('Predition', fontsize=f_size-4)
     plt.grid(False)
@@ -84,4 +91,4 @@ if len(all_gt) > 0 and len(all_pred) > 0:
             bbox=dict(facecolor='none', edgecolor='none')) 
 
     # 显示图形
-    plt.savefig(f'/data/zlt/RemoteSensePET/outputs/SOY/r2/point_{left}_t_{right}.pdf')
+    plt.savefig(f'/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/r2/point_{left}_t_{right}.pdf')
