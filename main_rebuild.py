@@ -24,7 +24,7 @@ from util.data_aug_zlt import create_hard_case_sampler_train
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
-    parser.add_argument('--cfg', type=str, default='configs_con/soybeam.yaml', 
+    parser.add_argument('--cfg', type=str, default='configs_con/test.yaml', 
                         help='base cfg file for training model')
     
     parser.add_argument('--save_ckpt_freq', type=int, default=100,
@@ -35,6 +35,10 @@ def get_args_parser():
     parser.add_argument('--resume', default=None, help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
+    
+    parser.add_argument('--eval_pad', default='padding_center')
+    parser.add_argument('--eval_robust', default=[])
+    parser.add_argument('--robust_para', default=None)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,

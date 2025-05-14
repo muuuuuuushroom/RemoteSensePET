@@ -246,9 +246,13 @@ class MetricLogger(object):
 
 
 def collate_fn(batch):
-    batch = list(zip(*batch))
-    batch[0] = nested_tensor_from_tensor_list(batch[0])
-    return tuple(batch)
+    # batch = list(zip(*batch))
+    # batch[0] = nested_tensor_from_tensor_list(batch[0])
+    imgs, targets, probs = zip(*batch)
+    imgs = nested_tensor_from_tensor_list(imgs)
+    probs = torch.stack(probs, dim=0)
+    # return tuple(batch)
+    return imgs, list(targets), probs
 
 
 def _max_by_axis_pad(the_list):

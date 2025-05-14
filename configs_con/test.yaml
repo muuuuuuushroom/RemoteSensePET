@@ -51,5 +51,8 @@ loss_f: normal # update  #gaussion_l2
 # info: 'constrain hxn predict'
 eval_path: mutilple_128
 matcher_opt: what
+predict: opre
+eval_pad: padding_center
+eval_robust: None
 
 output_dir: test
