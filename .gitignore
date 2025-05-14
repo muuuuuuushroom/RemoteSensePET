@@ -4,3 +4,5 @@ output_nohup
 outputs
 __pycache__/
 *.py[cod]
+
+log_vis.ipynb
