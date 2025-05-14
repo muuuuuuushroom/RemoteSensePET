@@ -101,12 +101,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     for samples, targets, probability in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
         probability = probability.to(device)
+        
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         gt_points = [target['points'] for target in targets]
         
         # start training transformer
         outputs = model(samples, epoch=epoch, train=True, 
-                        criterion=criterion, targets=targets)
+                        criterion=criterion, targets=targets,
+                        probability=probability)
         loss_dict, weight_dict, losses = outputs['loss_dict'], outputs['weight_dict'], outputs['losses']
 
         # reduce losses over all GPUs for logging purposes
