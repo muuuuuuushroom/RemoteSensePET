@@ -28,7 +28,8 @@ def get_args_parser():
     parser.add_argument('--resume', default='/data/zlt/PET/RTC/outputs_con/Ship/base_box_detr/best_checkpoint.pth', help='resume from checkpoint')
     parser.add_argument('--vis_dir', default=None)
     parser.add_argument('--eval_pad', default='padding_center')
-    parser.add_argument('--eval_robust', default=None)
+    parser.add_argument('--eval_robust', default=[])
+    parser.add_argument('--robust_para', default=None)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
