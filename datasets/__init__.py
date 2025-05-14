@@ -13,8 +13,8 @@ data_path = {
     'RTC': '/data/zlt/PET/RTC/data/RTC',
     'People': '/data/zlt/PET/RTC/data/People',
     
-    'Ship': '/data/zlt/datasets/Ship',
-    'Car': '/data/zlt/datasets/Car',
+    'Ship': 'data/Ship',
+    'Car': 'data/Car',
     
     'CORN': '/data/zlt/PET/origin_pet/PET/data/dataset_corn',
     
