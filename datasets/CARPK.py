@@ -190,12 +190,19 @@ class SHA(Dataset):
         if self.train:
             density = self.compute_density(points)
             target["density"] = density
-
-        if not self.train:
-            target["image_path"] = img_path
-            return img, target
             
-        return img, target, prob_crop
+            return img, target, prob_crop
+            
+        else: # not self.train
+            target["image_path"] = img_path
+            h5_path = img_path.replace('test_data', 'prob_map_dyna_SAE') .replace('.jpg', '.h5')
+            with h5py.File(h5_path, 'r') as hf:
+                probability = np.array(hf['density'])
+                probability = probability.float().unsqueeze(0) if isinstance(probability, torch.Tensor) else torch.from_numpy(probability).float().unsqueeze(0)
+    
+            return img, target, probability
+            
+        
 
         
 
@@ -329,8 +336,11 @@ def load_data(img_gt_path, train):
 
 
 def random_crop(img, points, bboxs, patch_size=256, probability=None):
+    # patch_h = patch_size
+    # patch_w = patch_size
+    
     patch_h = patch_size
-    patch_w = patch_size
+    patch_w = patch_size 
 
     # random crop
     start_h = random.randint(0, img.size(1) - patch_h) if img.size(1) > patch_h else 0

@@ -27,7 +27,7 @@ def get_args_parser():
     parser.add_argument('--cfg', type=str, default='configs_con/test.yaml', 
                         help='base cfg file for training model')
     
-    parser.add_argument('--save_ckpt_freq', type=int, default=100,
+    parser.add_argument('--save_ckpt_freq', type=int, default=500,
                         help="the frequency to save ckpt")
     # misc parameters
     parser.add_argument('--device', default='cuda',
@@ -39,6 +39,8 @@ def get_args_parser():
     parser.add_argument('--eval_pad', default='padding_center')
     parser.add_argument('--eval_robust', default=[])
     parser.add_argument('--robust_para', default=None)
+    
+    # parser.add_argument('--prob_map_lc', default=None)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -188,7 +190,7 @@ def main(args):
         if (epoch) % args.eval_freq == 0:
             print('\ntesting\n')
             t1 = time.time()
-            test_stats = evaluate(model, data_loader_val, device, epoch, None, distributed=args.distributed)
+            test_stats = evaluate(model, data_loader_val, device, epoch, criterion=criterion, distributed=args.distributed, args=args)
             t2 = time.time()
 
             # output results
@@ -202,8 +204,8 @@ def main(args):
             print("\n==========================\n")
             if utils.is_main_process():
                 with open(run_log_name, "a") as log_file:
-                    log_file.write("\nepoch:{}, mae:{}, mse:{}, r2:{}, rmae:{}, rmse:{}, racc{}, time{}, \n\nbest mae:{}, best epoch: {}\n\n".format(
-                                                epoch, mae, mse, r2, rmae, rmse, racc, t2 - t1, best_mae, best_epoch))
+                    log_file.write("\nepoch:{}, mae:{}, mse:{}, r2:{}, rmae:{}, rmse:{}, racc{}, time{}\n\n stats:{}\n\nbest mae:{}, best epoch: {}\n\n".format(
+                                                epoch, mae, mse, r2, rmae, rmse, racc, t2 - t1, test_stats, best_mae, best_epoch))
                                                 
             # save best checkpoint
             if mae == best_mae and utils.is_main_process():

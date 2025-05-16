@@ -13,6 +13,7 @@ from datasets import build_dataset
 import util.misc as utils
 
 from models import build_model
+from engine import evaluate
 
 from util.custom_log import *
 
@@ -44,10 +45,10 @@ def main(args):
     print(args)
     device = torch.device(args.device)
     
-    if args.dataset_file in ['Ship', 'Car', 'People']:
-        from engine_eval import evaluate
-    elif args.dataset_file in ['RTC', 'SOY']:
-        from engine import evaluate
+    # if args.dataset_file in ['Ship', 'Car', 'People']:
+    #     from engine_rsc import evaluate
+    # elif args.dataset_file in ['RTC', 'SOY']:
+    #     from engine import evaluate
 
     # fix the seed for reproducibility
     seed = args.seed + utils.get_rank()

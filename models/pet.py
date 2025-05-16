@@ -74,6 +74,21 @@ class QuadtreeSplitterWithAttention(nn.Module):
 
             return attn_output
 
+class Conv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, padding, stride=1, relu=True, bn=False):
+        super(Conv2d, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
+        self.bn = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0, affine=True) if bn else None
+        self.relu = nn.ReLU(inplace=True) if relu else None
+
+    def forward(self, x):
+        x = self.conv(x)
+        if self.bn is not None:
+            x = self.bn(x)
+        if self.relu is not None:
+            x = self.relu(x)
+        return x
+
 class BasePETCount(nn.Module):
     """ 
     Base PET model
@@ -94,6 +109,9 @@ class BasePETCount(nn.Module):
         self.quadtree_layer = quadtree_layer
         
         self.hidden_dim = args.hidden_dim
+        
+        # probability map
+        self.prob_conv = nn.Sequential(nn.Conv2d(in_channels=hidden_dim, out_channels=1, kernel_size=3, padding=1))
         
         # box-detr para needed:
         self.opt_query = args.opt_query_decoder
@@ -398,7 +416,8 @@ class BasePETCount(nn.Module):
                               img_shape=samples.tensors.shape[-2:], 
                               **kwargs # refbox is in the kwargs['refbox']
                               )
-
+        # hs.shape: [2inter, 7bs, 512patch_w, 256patch_h]
+        
         # prediction
         points_queries = pqs[1]
         if kwargs['predict'] == 'hxn':
@@ -477,8 +496,15 @@ class PET(nn.Module):
         self.dense_dec_win_size = args.dense_dec_win_size
         self.quadtree_sparse = BasePETCount(backbone, num_classes, quadtree_layer='sparse', args=args, transformer=transformer, patch_size=args.patch_size)
         self.quadtree_dense = BasePETCount(backbone, num_classes, quadtree_layer='dense', args=args, transformer=transformer, patch_size=args.patch_size)
+        
+        self.prob_map_lc = args.prob_map_lc
+        if args.prob_map_lc == 'f4x':
+            self.prob_conv = nn.Sequential(
+                nn.Conv2d(in_channels=backbone.num_channels, out_channels=1, kernel_size=3, padding=1),
+                nn.Sigmoid()
+            )
 
-    def compute_loss(self, outputs, criterion, targets, epoch, samples):
+    def compute_loss(self, outputs, criterion, targets, epoch, samples, prob=None, prob_est=None):
         """
         Compute loss, including:
             - point query loss (Eq. (3) in the paper)
@@ -495,11 +521,11 @@ class PET(nn.Module):
         
         # compute loss
         if epoch >= warmup_ep:
-            loss_dict_sparse = criterion(output_sparse, targets, div=outputs['split_map_sparse'], loss_f=loss_f)
-            loss_dict_dense = criterion(output_dense, targets, div=outputs['split_map_dense'], loss_f=loss_f)
+            loss_dict_sparse = criterion(output_sparse, targets, div=outputs['split_map_sparse'], loss_f=loss_f, prob=prob, prob_est=prob_est)
+            loss_dict_dense = criterion(output_dense, targets, div=outputs['split_map_dense'], loss_f=loss_f, prob=prob, prob_est=prob_est)
         else:
-            loss_dict_sparse = criterion(output_sparse, targets, loss_f=loss_f)
-            loss_dict_dense = criterion(output_dense, targets, loss_f=loss_f)
+            loss_dict_sparse = criterion(output_sparse, targets, loss_f=loss_f, prob=prob, prob_est=prob_est)
+            loss_dict_dense = criterion(output_dense, targets, loss_f=loss_f, prob=prob, prob_est=prob_est)
 
         # sparse point queries loss
         loss_dict_sparse = {k+'_sp':v for k, v in loss_dict_sparse.items()}
@@ -584,9 +610,15 @@ class PET(nn.Module):
         #  features: ['4x':BCHW, '8x':BCHW]
         #  pos: ['4x':B*hidden_dim*H*W, '8x':B*hidden_dim*H*W]
         
-        # ?
         # prob_map: tuple[0: b,1,32,32; 1:b,1,256,256] 0 from fpn_4x, 1 interpolated
         # kwargs['prob_map']=prob_map
+        
+        # prob map in feature
+        if 'train' in kwargs and self.prob_map_lc == 'f4x':
+            prob_map = self.prob_conv(features['4x'].tensors)
+            H, W = samples.tensors.shape[-2], samples.tensors.shape[-1]
+            prob_map_up = F.interpolate(prob_map, size=(H, W), mode='bilinear', align_corners=False)
+            kwargs['prob_map_up'] = prob_map_up
 
         # positional embedding
         dense_input_embed = self.pos_embed(samples)  # B*hidden_dim*imgH*imgW
@@ -672,7 +704,11 @@ class PET(nn.Module):
 
         # compute loss
         criterion, targets, epoch = kwargs['criterion'], kwargs['targets'], kwargs['epoch']
-        losses = self.compute_loss(outputs, criterion, targets, epoch, samples)
+        if self.prob_map_lc == 'f4x':
+            prob, prob_est = kwargs['probability'], kwargs['prob_map_up']
+            losses = self.compute_loss(outputs, criterion, targets, epoch, samples, prob, prob_est)
+        else:
+            losses = self.compute_loss(outputs, criterion, targets, epoch, samples)
         return losses
     
     def test_forward(self, samples, features, pos, **kwargs):
@@ -741,7 +777,7 @@ class SetCriterion(nn.Module):
         1) compute hungarian assignment between ground truth points and the outputs of the model
         2) supervise each pair of matched ground-truth / prediction and split map
     """
-    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses, sparse_stride, dense_stride):
+    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses, sparse_stride, dense_stride, map_loss):
         """
         Parameters:
             num_classes: one-class in crowd counting
@@ -761,6 +797,7 @@ class SetCriterion(nn.Module):
         self.register_buffer('empty_weight', empty_weight)
         # self.div_thrs_dict = {8: 0.0, 4:0.5}
         self.div_thrs_dict = {sparse_stride: 0.0, dense_stride:0.5}
+        self.map_loss = map_loss
     
     def loss_labels(self, outputs, targets, indices, num_points, log=True, **kwargs):
         """
@@ -860,6 +897,17 @@ class SetCriterion(nn.Module):
             losses['loss_points'] = loss_points_raw.sum() / num_points
         
         return losses
+    
+    def loss_maps(self, outputs, targets, indices, num_points, **kwargs):
+        criterion = nn.MSELoss(reduction='mean').cuda()
+        
+        prob = kwargs['prob']
+        prob_est = kwargs['prob_est']
+        
+        prob_loss = criterion(prob, prob_est)
+        losses = {}
+        losses['loss_maps'] = prob_loss
+        return losses
 
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
@@ -877,6 +925,10 @@ class SetCriterion(nn.Module):
         loss_map = {
             'labels': self.loss_labels,
             'points': self.loss_points,
+            'maps': self.loss_maps,
+        } if self.map_loss is not None else {
+            'labels': self.loss_labels,
+            'points': self.loss_points,
         }
         assert loss in loss_map, f'{loss} loss is not defined'
         return loss_map[loss](outputs, targets, indices, num_points, **kwargs)
@@ -887,6 +939,8 @@ class SetCriterion(nn.Module):
              outputs: dict of tensors, see the output specification of the model for the format
              targets: list of dicts, such that len(targets) == batch_size.
                       The expected keys in each dict depends on the losses applied, see each loss' doc
+                      
+            kwargs: prob, prob_est
         """
         # retrieve the matching between the outputs of the last layer and the targets
         indices = self.matcher(outputs, targets)
@@ -947,10 +1001,13 @@ def build_pet(args):
 
     # build loss criterion
     matcher = build_matcher(args)
-    weight_dict = {'loss_ce': args.ce_loss_coef, 'loss_points': args.point_loss_coef}
-    losses = ['labels', 'points']
+    weight_dict = {'loss_ce': args.ce_loss_coef, 
+                   'loss_points': args.point_loss_coef,
+                   'loss_maps': 1.0}
+    losses = ['labels', 'points', 'maps']
     criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict,
                              eos_coef=args.eos_coef, losses=losses,
-                             sparse_stride=args.sparse_stride, dense_stride=args.dense_stride)
+                             sparse_stride=args.sparse_stride, dense_stride=args.dense_stride,
+                             map_loss=args.prob_map_lc)
     criterion.to(device)
     return model, criterion

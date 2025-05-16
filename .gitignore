@@ -2,8 +2,11 @@ data
 log_vis
 output_nohup
 outputs
+cache
+
 __pycache__/
 *.py[cod]
 .vscode
 
 log_vis.ipynb
+instru.py
