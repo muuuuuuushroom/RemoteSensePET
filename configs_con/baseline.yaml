@@ -49,7 +49,7 @@ hard_case: False
 augmented: False
 opt_query_decoder: False
 attn_splitter: False
-loss_f: normal # update  #gaussion_l2
+loss_f: prob # update  #gaussion_l2 #prob
 # info: 'constrain hxn predict'
 eval_path: mutilple_128
 matcher_opt: normal
@@ -57,4 +57,4 @@ matcher_opt: normal
 predict: origin
 prob_map_lc: f4x # f4x, None
 
-output_dir: t_noencoder_opre_probF4x
+output_dir: t_noencoder_opre_probF4x_probLoss  #t_noencoder_opre_probF4x
