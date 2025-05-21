@@ -10,4 +10,5 @@ __pycache__/
 .vscode
 
 log_vis.ipynb
+paint_r2.py
 instru.py
