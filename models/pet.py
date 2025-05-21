@@ -111,7 +111,8 @@ class BasePETCount(nn.Module):
         self.hidden_dim = args.hidden_dim
         
         # probability map
-        self.prob_conv = nn.Sequential(nn.Conv2d(in_channels=hidden_dim, out_channels=1, kernel_size=3, padding=1))
+        # if args.prob_map_lc == 'f4x':
+        #     self.prob_conv = nn.Sequential(nn.Conv2d(in_channels=hidden_dim, out_channels=1, kernel_size=3, padding=1))
         
         # box-detr para needed:
         self.opt_query = args.opt_query_decoder
@@ -953,7 +954,6 @@ class SetCriterion(nn.Module):
             losses.update(self.get_loss(loss, outputs, targets, indices, num_points, **kwargs))
         return losses
     
-        
     def forward_ind(self, outputs, targets):
         indices = self.matcher(outputs, targets)
         return  indices
@@ -996,11 +996,15 @@ def build_pet(args):
 
     # build loss criterion
     matcher = build_matcher(args)
-    args.map_loss_coef = 1.0 if not hasattr(args, 'map_loss_coef') else args.map_loss_coef
-    weight_dict = {'loss_ce': args.ce_loss_coef, 
-                   'loss_points': args.point_loss_coef,
-                   'loss_maps': args.map_loss_coef}
-    losses = ['labels', 'points', 'maps'] if args.prob_map_lc=='f4x' else ['labels', 'points']
+    if args.prob_map_lc == 'f4x':
+        weight_dict = {'loss_ce': args.ce_loss_coef, 
+                    'loss_points': args.point_loss_coef,
+                    'loss_maps': 1.0}
+        losses = ['labels', 'points', 'maps']
+    else:
+        weight_dict = {'loss_ce': args.ce_loss_coef, 
+                    'loss_points': args.point_loss_coef}
+        losses = ['labels', 'points']
     criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict,
                              eos_coef=args.eos_coef, losses=losses,
                              sparse_stride=args.sparse_stride, dense_stride=args.dense_stride,

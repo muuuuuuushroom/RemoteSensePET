@@ -72,6 +72,8 @@ class SHA(Dataset):
         self.test_robust=args.eval_robust #'direction'  # dense, scale
         print(f'robust testing: {self.test_robust}')
         
+        self.prob_map_lc = args.prob_map_lc
+        
         self.robust_para = args.robust_para
         if args.robust_para is not None:
             print('scaling test')
@@ -130,29 +132,31 @@ class SHA(Dataset):
         img = torch.Tensor(img)
 
         # # random scale?
-        # if self.train:
-        #     scale_range = [0.3, 0.7]
-        #     min_size = min(img.shape[1:])
-        #     scale = random.uniform(*scale_range)
+        if self.train:
+            scale_range = [0.3, 0.7]
+            min_size = min(img.shape[1:])
+            scale = random.uniform(*scale_range)
 
-        #     # interpolation
-        #     if scale * min_size > self.patch_size:
-        #         img = torch.nn.functional.upsample_bilinear(
-        #             img.unsqueeze(0), scale_factor=scale
-        #         ).squeeze(0)
-        #         points *= scale
-        #         bboxs *= scale
+            # interpolation
+            if scale * min_size > self.patch_size:
+                img = torch.nn.functional.upsample_bilinear(
+                    img.unsqueeze(0), scale_factor=scale
+                ).squeeze(0)
+                points *= scale
+                bboxs *= scale
                 
         img_ = img.numpy()
         img_ = np.transpose(img_, (1, 2, 0))
         
         if self.train:
-            
-            h5_path = img_path.replace('train_data', 'prob_map_dyna_SAE') .replace('.jpg', '.h5')
-            with h5py.File(h5_path, 'r') as hf:
-                probability = np.array(hf['density'])
-                # probability = torch.from_numpy(density).float().unsqueeze(0)  # [1, H, W]
-                probability = probability.float().unsqueeze(0) if isinstance(probability, torch.Tensor) else torch.from_numpy(probability).float().unsqueeze(0)
+            if self.prob_map_lc == 'f4x':
+                h5_path = img_path.replace('train_data', 'prob_map_dyna_SAE') .replace('.jpg', '.h5')
+                with h5py.File(h5_path, 'r') as hf:
+                    probability = np.array(hf['density'])
+                    # probability = torch.from_numpy(density).float().unsqueeze(0)  # [1, H, W]
+                    probability = probability.float().unsqueeze(0) if isinstance(probability, torch.Tensor) else torch.from_numpy(probability).float().unsqueeze(0)
+            else:
+                probability = None
                 
             img, points, bboxs, prob_crop = random_crop(
                 img, points, bboxs, patch_size=self.patch_size, probability=probability
@@ -178,7 +182,8 @@ class SHA(Dataset):
 
         if random.random() > 0.5 and self.train and self.flip:
             img = torch.flip(img, dims=[2])
-            prob_crop = torch.flip(prob_crop, dims=[2])
+            if self.prob_map_lc == 'f4x':
+                prob_crop = torch.flip(prob_crop, dims=[2])
             points[:, 1] = self.patch_size - points[:, 1]
 
         # target
@@ -190,21 +195,17 @@ class SHA(Dataset):
         if self.train:
             density = self.compute_density(points)
             target["density"] = density
-            
-            return img, target, prob_crop
-            
+            if self.prob_map_lc == 'f4x':
+                return img, target, prob_crop
         else: # not self.train
             target["image_path"] = img_path
-            h5_path = img_path.replace('test_data', 'prob_map_dyna_SAE') .replace('.jpg', '.h5')
-            with h5py.File(h5_path, 'r') as hf:
-                probability = np.array(hf['density'])
-                probability = probability.float().unsqueeze(0) if isinstance(probability, torch.Tensor) else torch.from_numpy(probability).float().unsqueeze(0)
+            # h5_path = img_path.replace('test_data', 'prob_map_dyna_SAE') .replace('.jpg', '.h5')
+            # with h5py.File(h5_path, 'r') as hf:
+            #     probability = np.array(hf['density'])
+            #     probability = probability.float().unsqueeze(0) if isinstance(probability, torch.Tensor) else torch.from_numpy(probability).float().unsqueeze(0)
     
-            return img, target, probability
-            
-        
+        return img, target, None  #, probability
 
-        
 
 def dirction_robust(img, points, bboxs, index):
     # if test_robust != 'None':
@@ -383,9 +384,11 @@ def random_crop(img, points, bboxs, patch_size=256, probability=None):
         prob_crop = torch.nn.functional.interpolate(
             prob_crop.unsqueeze(0) , size=(patch_h, patch_w)
         ).squeeze(0) # [H, W]
-        return result_img, result_points, result_bboxs, prob_crop
-    
-    return result_img, result_points, result_bboxs
+    else:
+        prob_crop = None
+        
+    return result_img, result_points, result_bboxs, prob_crop
+    # return result_img, result_points, result_bboxs
 
 
 def get_patch_size(img_h, img_w):

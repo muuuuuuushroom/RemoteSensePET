@@ -58,4 +58,4 @@ predict: origin
 prob_map_lc: None
 
 
-output_dir: t_noencoder_opre_boxdetr
+output_dir: abl_t_t_noencoder_opre_boxdetr

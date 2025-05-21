@@ -40,7 +40,7 @@ def get_args_parser():
     parser.add_argument('--eval_robust', default=[])
     parser.add_argument('--robust_para', default=None)
     
-    # parser.add_argument('--prob_map_lc', default=None)
+    parser.add_argument('--prob_map_lc', default=None)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
