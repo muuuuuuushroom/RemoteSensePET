@@ -5,7 +5,7 @@ lr: 0.0001
 lr_backbone: 0.00001
 weight_decay: 0.0001
 clip_max_norm: 0.1
-batch_size: 7 # 7 for debugging
+batch_size: 5 # 7 for debugging
 epochs: 100
 seed: 42
 eval_freq: 1
@@ -45,7 +45,9 @@ global_crop_ratio: 0.1
 
 hard_case: False
 augmented: False
-opt_query_decoder: False
+
+opt_query_decoder: True
+
 attn_splitter: False
 loss_f: normal # update  #gaussion_l2
 # info: 'constrain hxn predict'
@@ -54,6 +56,6 @@ matcher_opt: what
 predict: origin
 eval_pad: padding_center
 eval_robust: None
-prob_map_lc: f4x
+prob_map_lc: None
 
 output_dir: test

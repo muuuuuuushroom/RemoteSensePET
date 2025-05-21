@@ -164,9 +164,6 @@ class WinDecoderTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
     
     def decoder_forward(self, query_feats, query_embed, memory_win, pos_embed_win, mask_win, dec_win_h, dec_win_w, src_shape, **kwargs):
-        """ 
-        decoder forward during training
-        """
         # process of decoder forward
         bs, c, h, w = src_shape
         qH, qW = query_feats.shape[-2:]
@@ -199,11 +196,9 @@ class WinDecoderTransformer(nn.Module):
             refloc = kwargs['refloc']
             num_wins = tgt.shape[1]
             refloc_win = refloc.unsqueeze(1).repeat(1, num_wins, 1)
-            
             # we try:
             # refloc_win = points_queries_win.to(refloc.device)
-       
-        if self.opt_query_decoder:
+            
             hs_win, references_win = self.decoder(tgt, 
                                 memory_win, 
                                 memory_key_padding_mask=mask_win, 
@@ -364,59 +359,59 @@ class TransformerEncoder(nn.Module):
 
         return output
 
-class GaussianPointOffset(nn.Module):
-    def __init__(self, d_model, nhead, sigma=0.05):
-        super(GaussianPointOffset, self).__init__()
-        self.d_model = d_model
-        self.nhead = nhead
-        self.sigma = sigma
-        self.offset_mlp = MLP(d_model, d_model, 2 * nhead, 2)
+# class GaussianPointOffset(nn.Module):
+#     def __init__(self, d_model, nhead, sigma=0.05):
+#         super(GaussianPointOffset, self).__init__()
+#         self.d_model = d_model
+#         self.nhead = nhead
+#         self.sigma = sigma
+#         self.offset_mlp = MLP(d_model, d_model, 2 * nhead, 2)
 
-    def forward(self, output, box):
-        N, B, _ = box.shape     # num queries, bs, 2
-        base_offset = self.offset_mlp(output).reshape(N, B, self.nhead, 2)
-        gaussian_noise = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma
-        point_offset = base_offset + gaussian_noise
-        agent = box.unsqueeze(-2) + point_offset
-        return agent
+#     def forward(self, output, box):
+#         N, B, _ = box.shape     # num queries, bs, 2
+#         base_offset = self.offset_mlp(output).reshape(N, B, self.nhead, 2)
+#         gaussian_noise = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma
+#         point_offset = base_offset + gaussian_noise
+#         agent = box.unsqueeze(-2) + point_offset
+#         return agent
     
-class DynamicOffset(nn.Module):
-    def __init__(self, nhead, init_scale=0.1):
-        super().__init__()
-        self.nhead = nhead
-        self.scale = nn.Parameter(torch.full((nhead, 1), init_scale))
+# class DynamicOffset(nn.Module):
+#     def __init__(self, nhead, init_scale=0.1):
+#         super().__init__()
+#         self.nhead = nhead
+#         self.scale = nn.Parameter(torch.full((nhead, 1), init_scale))
 
-    def forward(self, box, output):
-        N, B, _ = box.shape
-        point_offset = torch.randn(N, B, self.nhead, 2, device=box.device)
-        point_offset = point_offset * self.scale.view(1, 1, self.nhead, 1)
-        agent = box.unsqueeze(-2) + point_offset
-        return agent
+#     def forward(self, box, output):
+#         N, B, _ = box.shape
+#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device)
+#         point_offset = point_offset * self.scale.view(1, 1, self.nhead, 1)
+#         agent = box.unsqueeze(-2) + point_offset
+#         return agent
     
-class LearnableGaussian(nn.Module):
-    def __init__(self, nhead, init_sigma=0.1):
-        super().__init__()
-        self.nhead = nhead
-        self.sigma = nn.Parameter(torch.full((nhead, 1), init_sigma))  # 每个 head 独立学习
+# class LearnableGaussian(nn.Module):
+#     def __init__(self, nhead, init_sigma=0.1):
+#         super().__init__()
+#         self.nhead = nhead
+#         self.sigma = nn.Parameter(torch.full((nhead, 1), init_sigma))  # 每个 head 独立学习
 
-    def forward(self, box, output):
-        N, B, _ = box.shape
-        point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma.view(1, 1, self.nhead, 1)
-        agent = box.unsqueeze(-2) + point_offset
-        return agent
+#     def forward(self, box, output):
+#         N, B, _ = box.shape
+#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma.view(1, 1, self.nhead, 1)
+#         agent = box.unsqueeze(-2) + point_offset
+#         return agent
 
-class FeatureDependentOffset(nn.Module):
-    def __init__(self, d_model, nhead):
-        super().__init__()
-        self.nhead = nhead
-        self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
+# class FeatureDependentOffset(nn.Module):
+#     def __init__(self, d_model, nhead):
+#         super().__init__()
+#         self.nhead = nhead
+#         self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
 
-    def forward(self, box, output):
-        N, B, _ = box.shape
-        offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
-        point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
-        agent = box.unsqueeze(-2) + point_offset
-        return agent
+#     def forward(self, box, output):
+#         N, B, _ = box.shape
+#         offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
+#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
+#         agent = box.unsqueeze(-2) + point_offset
+#         return agent
 
 class TransformerDecoder(nn.Module):
     """
@@ -444,7 +439,7 @@ class TransformerDecoder(nn.Module):
             self.d_model = d_model
             self.nhead = nhead
             
-            self.offset_generator = FeatureDependentOffset(d_model, nhead)
+            # self.offset_generator = FeatureDependentOffset(d_model, nhead)
 
             for layer_id in range(num_layers - 1):
                 self.layers[layer_id + 1].ca_qpos_proj = None

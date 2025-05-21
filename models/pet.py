@@ -414,7 +414,7 @@ class BasePETCount(nn.Module):
         else:
             hs = self.transformer(encode_src, src_pos_embed, mask, pqs, 
                               img_shape=samples.tensors.shape[-2:], 
-                              **kwargs # refbox is in the kwargs['refbox']
+                              **kwargs
                               )
         # hs.shape: [2inter, 7bs, 512patch_w, 256patch_h]
         
@@ -513,6 +513,7 @@ class PET(nn.Module):
         output_sparse, output_dense = outputs['sparse'], outputs['dense']
         weight_dict = criterion.weight_dict
         warmup_ep = 5
+        max_sp = 3000
         cycles = 3 # default = 5
         
         # ln_epsilon = math.log(1e-5)
@@ -520,7 +521,7 @@ class PET(nn.Module):
         loss_f = self.loss_f
         
         # compute loss
-        if epoch >= warmup_ep:
+        if max_sp > epoch >= warmup_ep:
             loss_dict_sparse = criterion(output_sparse, targets, div=outputs['split_map_sparse'], loss_f=loss_f, prob=prob, prob_est=prob_est)
             loss_dict_dense = criterion(output_dense, targets, div=outputs['split_map_dense'], loss_f=loss_f, prob=prob, prob_est=prob_est)
         else:
@@ -569,7 +570,7 @@ class PET(nn.Module):
         # update quadtree splitter loss            
         loss_split = loss_split_sp + loss_split_ds
         
-        if epoch <= warmup_ep:
+        if epoch <= warmup_ep or epoch > max_sp:
             weight_split = 0.0
         elif self.loss_f == 'update':
             max_split_weight = 0.3
@@ -581,12 +582,6 @@ class PET(nn.Module):
             cycle_length = (total_tensor - warmup_tensor) / cycles
             progress_within_cycle = ((epoch_tensor - warmup_tensor) % cycle_length) / cycle_length
             weight_split = max_split_weight * (0.5 * (1 + torch.cos(2 * torch.pi * progress_within_cycle)))
-        
-            # cycle_length = (self.total_epochs - warmup_ep) / cycles 
-            # progress_within_cycle = ((epoch - warmup_ep) % cycle_length) / cycle_length
-            # # cos update
-            # weight_split = max_split_weight * 0.5 * (1 + torch.cos(2 * math.pi * progress_within_cycle)) 
-            # weight_split = max_split_weight * 0.5 * (1 + math.cos(math.pi * (epoch - warmup_ep) / (self.total_epochs - warmup_ep)))
         else:
             weight_split = 0.1
             
@@ -926,7 +921,7 @@ class SetCriterion(nn.Module):
             'labels': self.loss_labels,
             'points': self.loss_points,
             'maps': self.loss_maps,
-        } if self.map_loss is not None else {
+        } if self.map_loss == 'f4x' else {
             'labels': self.loss_labels,
             'points': self.loss_points,
         }
@@ -1001,10 +996,11 @@ def build_pet(args):
 
     # build loss criterion
     matcher = build_matcher(args)
+    args.map_loss_coef = 1.0 if not hasattr(args, 'map_loss_coef') else args.map_loss_coef
     weight_dict = {'loss_ce': args.ce_loss_coef, 
                    'loss_points': args.point_loss_coef,
-                   'loss_maps': 1.0}
-    losses = ['labels', 'points', 'maps']
+                   'loss_maps': args.map_loss_coef}
+    losses = ['labels', 'points', 'maps'] if args.prob_map_lc=='f4x' else ['labels', 'points']
     criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict,
                              eos_coef=args.eos_coef, losses=losses,
                              sparse_stride=args.sparse_stride, dense_stride=args.dense_stride,

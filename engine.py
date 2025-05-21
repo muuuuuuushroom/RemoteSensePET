@@ -262,6 +262,8 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
                     tp_ac = tp
             else:
                 tp = 0
+                if gt_cnt > gt_determined:
+                    tp_ac = tp
 
             # F1 compute
             fn = gt_cnt - tp
