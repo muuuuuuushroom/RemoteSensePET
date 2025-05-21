@@ -400,18 +400,18 @@ class TransformerEncoder(nn.Module):
 #         agent = box.unsqueeze(-2) + point_offset
 #         return agent
 
-# class FeatureDependentOffset(nn.Module):
-#     def __init__(self, d_model, nhead):
-#         super().__init__()
-#         self.nhead = nhead
-#         self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
+class FeatureDependentOffset(nn.Module):
+    def __init__(self, d_model, nhead):
+        super().__init__()
+        self.nhead = nhead
+        self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
 
-#     def forward(self, box, output):
-#         N, B, _ = box.shape
-#         offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
-#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
-#         agent = box.unsqueeze(-2) + point_offset
-#         return agent
+    def forward(self, box, output):
+        N, B, _ = box.shape
+        offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
+        point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
+        agent = box.unsqueeze(-2) + point_offset
+        return agent
 
 class TransformerDecoder(nn.Module):
     """
@@ -439,7 +439,7 @@ class TransformerDecoder(nn.Module):
             self.d_model = d_model
             self.nhead = nhead
             
-            # self.offset_generator = FeatureDependentOffset(d_model, nhead)
+            self.offset_generator = FeatureDependentOffset(d_model, nhead)
 
             for layer_id in range(num_layers - 1):
                 self.layers[layer_id + 1].ca_qpos_proj = None

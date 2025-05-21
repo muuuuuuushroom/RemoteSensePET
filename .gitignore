@@ -3,6 +3,7 @@ log_vis
 output_nohup
 outputs
 cache
+tools
 
 __pycache__/
 *.py[cod]
