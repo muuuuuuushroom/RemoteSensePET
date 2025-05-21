@@ -144,7 +144,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     for samples, targets, probability in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
-        probability = probability.to(device)
+        if probability[0] is not None:
+            probability = probability.to(device)
         
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         gt_points = [target['points'] for target in targets]
@@ -219,7 +220,8 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
         vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
         os.makedirs(vis_dir_ac, exist_ok=True)
         
-    gt_cnt_all, pd_cnt_all, gt_cnt_all_ac, pd_cnt_all_ac = [], [], [], []
+    gt_cnt_all, pd_cnt_all = [], []
+    gt_cnt_all_ac, pd_cnt_all_ac = [], []
     print_freq = 10; count = 0
     for samples, targets, prob in metric_logger.log_every(data_loader, print_freq, header):
         
@@ -258,9 +260,9 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
 
             if outputs_set.shape[0] != 0:
                 tp = cal_distance(target_box, ind, target_set, outputs_set)
-                if gt_cnt > gt_determined:
-                    tp_ac = tp
+                tp_ac = tp
             else:
+                tp_ac = 0
                 tp = 0
 
             # F1 compute
@@ -281,15 +283,8 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
         # record results
         results = {}
         toTensor = lambda x: torch.tensor(x).float().cuda()
-        # results['mae'], results['mse'] = toTensor(mae), toTensor(mse)
-        (
-            results["mae"],
-            results["mse"],
-            results["Prec"],
-            results["Recall"],
-            results["F1_s"],
-            results["abs"]
-        ) = (toTensor(mae), toTensor(mse), Prec, Recall, F1_s, abs_)
+        results['mae'], results['mse'] = toTensor(mae), toTensor(mse)
+        results["Prec"], results["Recall"], results["F1_s"], results["abs"] = Prec, Recall, F1_s, abs_
         
         if gt_cnt > gt_determined:
             (   
