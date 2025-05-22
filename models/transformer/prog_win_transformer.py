@@ -41,6 +41,19 @@ class MLP(nn.Module):
             # x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
 
+class FeatureDependentOffset(nn.Module):
+    def __init__(self, d_model, nhead):
+        super().__init__()
+        self.nhead = nhead
+        self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
+
+    def forward(self, box, output):
+        N, B, _ = box.shape
+        offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
+        point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
+        agent = box.unsqueeze(-2) + point_offset
+        return agent
+
 # utils:
 def gen_sineembed_for_position(pos_tensor, d_model=256):
     # n_query, bs, _ = pos_tensor.size()
@@ -77,53 +90,6 @@ def inverse_sigmoid(x, eps=1e-3):
     return torch.log(x1/x2)
 
 
-class WinEncoderTransformer(nn.Module):
-    """
-    Transformer Encoder, featured with progressive rectangle window attention
-    """
-    def __init__(self, d_model=256, nhead=8, num_encoder_layers=4,
-                 dim_feedforward=512, dropout=0.0,
-                 activation="relu", 
-                 attn_type='softmax',
-                 **kwargs):
-        super().__init__()
-        self.attn_type = attn_type
-        encoder_layer = EncoderLayer(d_model, nhead, dim_feedforward, 
-                                     dropout, activation, attn_type=self.attn_type)
-        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, **kwargs)
-        self._reset_parameters()
-
-        self.d_model = d_model
-        self.nhead = nhead
-
-        self.enc_win_list = kwargs['enc_win_list']
-        self.return_intermediate = kwargs['return_intermediate'] if 'return_intermediate' in kwargs else False           
-
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-    
-    def forward(self, src, pos_embed, mask):
-        bs, c, h, w = src.shape
-        
-        memeory_list = []
-        memeory = src
-        for idx, enc_win_size in enumerate(self.enc_win_list):
-            # encoder window partition
-            enc_win_w, enc_win_h = enc_win_size
-            memeory_win, pos_embed_win, mask_win  = enc_win_partition(memeory, pos_embed, mask, enc_win_h, enc_win_w)  # (HW)(BN)C          
-
-            # encoder forward
-            output = self.encoder.single_forward(memeory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx)
-
-            # reverse encoder window
-            memeory = enc_win_partition_reverse(output, enc_win_h, enc_win_w, h, w)
-            if self.return_intermediate:
-                memeory_list.append(memeory)        
-        memory_ = memeory_list if self.return_intermediate else memeory
-        return memory_
-
 
 class WinDecoderTransformer(nn.Module):
     """
@@ -136,8 +102,7 @@ class WinDecoderTransformer(nn.Module):
                  dec_win_w=16, dec_win_h=8,               
                  attn_type='softmax',
                  opt_query_decoder=False,
-                 # anchor-detr patterns
-                 num_patterns=0, 
+                 num_patterns=0,           # anchor-detr patterns
                  ):
         super().__init__()
         decoder_layer = DecoderLayer(d_model, nhead, dim_feedforward,
@@ -313,51 +278,7 @@ class WinDecoderTransformer(nn.Module):
                                         memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w, src.shape, **kwargs)
                 return hs.transpose(1, 2)
             
-        
-class TransformerEncoder(nn.Module):
-    """
-    Base Transformer Encoder
-    """
-    def __init__(self, encoder_layer, num_layers, **kwargs):
-        super().__init__()
-        self.layers = _get_clones(encoder_layer, num_layers)
-        self.num_layers = num_layers
 
-        if 'return_intermediate' in kwargs:
-            self.return_intermediate = kwargs['return_intermediate']
-        else:
-            self.return_intermediate = False
-    
-    def single_forward(self, src,
-                mask: Optional[Tensor] = None,
-                src_key_padding_mask: Optional[Tensor] = None,
-                pos: Optional[Tensor] = None,
-                layer_idx=0):
-        '''specific layer forward'''
-        output = src
-        layer = self.layers[layer_idx]
-        output = layer(output, src_mask=mask,
-                        src_key_padding_mask=src_key_padding_mask, pos=pos)        
-        return output
-
-    def forward(self, src,
-                mask: Optional[Tensor] = None,
-                src_key_padding_mask: Optional[Tensor] = None,
-                pos: Optional[Tensor] = None):
-        
-        intermediate = []
-        output = src
-        for layer in self.layers:
-            output = layer(output, src_mask=mask,
-                           src_key_padding_mask=src_key_padding_mask, pos=pos)
-            
-            if self.return_intermediate:
-                intermediate.append(output)
-        
-        if self.return_intermediate:
-            return intermediate
-
-        return output
 
 # class GaussianPointOffset(nn.Module):
 #     def __init__(self, d_model, nhead, sigma=0.05):
@@ -400,18 +321,7 @@ class TransformerEncoder(nn.Module):
 #         agent = box.unsqueeze(-2) + point_offset
 #         return agent
 
-class FeatureDependentOffset(nn.Module):
-    def __init__(self, d_model, nhead):
-        super().__init__()
-        self.nhead = nhead
-        self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
 
-    def forward(self, box, output):
-        N, B, _ = box.shape
-        offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
-        point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
-        agent = box.unsqueeze(-2) + point_offset
-        return agent
 
 class TransformerDecoder(nn.Module):
     """
@@ -566,59 +476,6 @@ class TransformerDecoder(nn.Module):
 
         return output.unsqueeze(0)
 
-
-class EncoderLayer(nn.Module):
-    def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
-                 activation="relu", attn_type="softmax"):
-        super().__init__()
-        assert attn_type in ['softmax', 'chunk_linear', 'fused_chunk_linear', 'fused_recurrent_linear'], \
-            print(f"attn_type should be in ['softmax', 'chunk_linear', 'fused_chunk_linear', 'fused_recurrent_linear'], but get: {attn_type}")
-        print(f"attn_type: {attn_type}")
-        self.attn_type = attn_type
-        # if "linear" in attn_type:
-        #     pass
-        # else:
-        #     self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-
-        # feedforward layer
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.activation = _get_activation_fn(activation)
-
-    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
-        return tensor if pos is None else tensor + pos
-
-    def forward(self, 
-                src,
-                src_mask: Optional[Tensor] = None,
-                src_key_padding_mask: Optional[Tensor] = None,
-                pos: Optional[Tensor] = None):
-        q = k = self.with_pos_embed(src, pos)
-
-        # if self.attn_type == "chunk_linear":
-        #     q = rearrange(q, 'b n (h d) -> b h n d', h=8)
-        #     src2 = chunk_linear_attn(q, k, v=src, normalize=True)
-        # elif self.attn_type == 'fused_chunk_linear':
-        #     src2 = fused_chunk_linear_attn(q, k, v=src, normalize=True)
-        # elif self.attn_type == 'fused_recurrent_linear':
-        #     src2 = fused_recurrent_linear_attn(q, k, v=src, normalize=True)
-        # else:
-        #     src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
-        #                       key_padding_mask=src_key_padding_mask)[0]
-        src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
-        src = src + src2
-        src = self.norm1(src)
-
-        src2 = self.linear2(self.activation(self.linear1(src)))
-        src = src + src2
-        src = self.norm2(src)
-        return src
-
-
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
                  activation="relu", attn_type="softmax", opt_query_decoder=False):
@@ -772,6 +629,152 @@ class DecoderLayer(nn.Module):
         return tgt
 
 
+class WinEncoderTransformer(nn.Module):
+    """
+    Transformer Encoder, featured with progressive rectangle window attention
+    """
+    def __init__(self, d_model=256, nhead=8, num_encoder_layers=4,
+                 dim_feedforward=512, dropout=0.0,
+                 activation="relu", 
+                 attn_type='softmax',
+                 **kwargs):
+        super().__init__()
+        self.attn_type = attn_type
+        encoder_layer = EncoderLayer(d_model, nhead, dim_feedforward, 
+                                     dropout, activation, attn_type=self.attn_type)
+        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, **kwargs)
+        self._reset_parameters()
+
+        self.d_model = d_model
+        self.nhead = nhead
+
+        self.enc_win_list = kwargs['enc_win_list']
+        self.return_intermediate = kwargs['return_intermediate'] if 'return_intermediate' in kwargs else False           
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+    
+    def forward(self, src, pos_embed, mask):
+        bs, c, h, w = src.shape
+        
+        memeory_list = []
+        memeory = src
+        for idx, enc_win_size in enumerate(self.enc_win_list):
+            # encoder window partition
+            enc_win_w, enc_win_h = enc_win_size
+            memeory_win, pos_embed_win, mask_win  = enc_win_partition(memeory, pos_embed, mask, enc_win_h, enc_win_w)  # (HW)(BN)C          
+
+            # encoder forward
+            output = self.encoder.single_forward(memeory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx)
+
+            # reverse encoder window
+            memeory = enc_win_partition_reverse(output, enc_win_h, enc_win_w, h, w)
+            if self.return_intermediate:
+                memeory_list.append(memeory)        
+        memory_ = memeory_list if self.return_intermediate else memeory
+        return memory_
+
+        
+class TransformerEncoder(nn.Module):
+    """
+    Base Transformer Encoder
+    """
+    def __init__(self, encoder_layer, num_layers, **kwargs):
+        super().__init__()
+        self.layers = _get_clones(encoder_layer, num_layers)
+        self.num_layers = num_layers
+
+        if 'return_intermediate' in kwargs:
+            self.return_intermediate = kwargs['return_intermediate']
+        else:
+            self.return_intermediate = False
+    
+    def single_forward(self, src,
+                mask: Optional[Tensor] = None,
+                src_key_padding_mask: Optional[Tensor] = None,
+                pos: Optional[Tensor] = None,
+                layer_idx=0):
+        '''specific layer forward'''
+        output = src
+        layer = self.layers[layer_idx]
+        output = layer(output, src_mask=mask,
+                        src_key_padding_mask=src_key_padding_mask, pos=pos)        
+        return output
+
+    def forward(self, src,
+                mask: Optional[Tensor] = None,
+                src_key_padding_mask: Optional[Tensor] = None,
+                pos: Optional[Tensor] = None):
+        
+        intermediate = []
+        output = src
+        for layer in self.layers:
+            output = layer(output, src_mask=mask,
+                           src_key_padding_mask=src_key_padding_mask, pos=pos)
+            
+            if self.return_intermediate:
+                intermediate.append(output)
+        
+        if self.return_intermediate:
+            return intermediate
+
+        return output
+
+
+class EncoderLayer(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
+                 activation="relu", attn_type="softmax"):
+        super().__init__()
+        assert attn_type in ['softmax', 'chunk_linear', 'fused_chunk_linear', 'fused_recurrent_linear'], \
+            print(f"attn_type should be in ['softmax', 'chunk_linear', 'fused_chunk_linear', 'fused_recurrent_linear'], but get: {attn_type}")
+        print(f"attn_type: {attn_type}")
+        self.attn_type = attn_type
+        # if "linear" in attn_type:
+        #     pass
+        # else:
+        #     self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+
+        # feedforward layer
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.activation = _get_activation_fn(activation)
+
+    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
+        return tensor if pos is None else tensor + pos
+
+    def forward(self, 
+                src,
+                src_mask: Optional[Tensor] = None,
+                src_key_padding_mask: Optional[Tensor] = None,
+                pos: Optional[Tensor] = None):
+        q = k = self.with_pos_embed(src, pos)
+
+        # if self.attn_type == "chunk_linear":
+        #     q = rearrange(q, 'b n (h d) -> b h n d', h=8)
+        #     src2 = chunk_linear_attn(q, k, v=src, normalize=True)
+        # elif self.attn_type == 'fused_chunk_linear':
+        #     src2 = fused_chunk_linear_attn(q, k, v=src, normalize=True)
+        # elif self.attn_type == 'fused_recurrent_linear':
+        #     src2 = fused_recurrent_linear_attn(q, k, v=src, normalize=True)
+        # else:
+        #     src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
+        #                       key_padding_mask=src_key_padding_mask)[0]
+        src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
+                              key_padding_mask=src_key_padding_mask)[0]
+        src = src + src2
+        src = self.norm1(src)
+
+        src2 = self.linear2(self.activation(self.linear1(src)))
+        src = src + src2
+        src = self.norm2(src)
+        return src
+
+
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
@@ -814,50 +817,56 @@ def _get_activation_fn(activation):
         return F.glu
     raise RuntimeError(F"activation should be relu/gelu, not {activation}.")
 
-if __name__ == '__main__':
-    opt = True
-    class Configs():
-        hidden_dim = 256
-        dropout = 0.0
-        nheads = 8
-        dim_feedforward = 512
-        dec_layers = 2
-        opt_query_decoder = opt
-    
-    args = Configs()
-    transformer = build_decoder(args)
-    print(transformer)
-    
-    class NestedTensor(object):
-        def __init__(self, tensors, mask: Optional[Tensor]):
-            self.tensors = tensors
-            self.mask = mask
 
-        def to(self, device):
-            # type: (Device) -> NestedTensor # noqa # type: ignore
-            cast_tensor = self.tensors.to(device)
-            mask = self.mask
-            if mask is not None:
-                assert mask is not None
-                cast_mask = mask.to(device)
-            else:
-                cast_mask = None
-            return NestedTensor(cast_tensor, cast_mask)
 
-        def decompose(self):
-            return self.tensors, self.mask
 
-        def __repr__(self):
-            return str(self.tensors)
+
+
+
+# if __name__ == '__main__':
+#     opt = True
+#     class Configs():
+#         hidden_dim = 256
+#         dropout = 0.0
+#         nheads = 8
+#         dim_feedforward = 512
+#         dec_layers = 2
+#         opt_query_decoder = opt
+    
+#     args = Configs()
+#     transformer = build_decoder(args)
+#     print(transformer)
+    
+#     class NestedTensor(object):
+#         def __init__(self, tensors, mask: Optional[Tensor]):
+#             self.tensors = tensors
+#             self.mask = mask
+
+#         def to(self, device):
+#             # type: (Device) -> NestedTensor # noqa # type: ignore
+#             cast_tensor = self.tensors.to(device)
+#             mask = self.mask
+#             if mask is not None:
+#                 assert mask is not None
+#                 cast_mask = mask.to(device)
+#             else:
+#                 cast_mask = None
+#             return NestedTensor(cast_tensor, cast_mask)
+
+#         def decompose(self):
+#             return self.tensors, self.mask
+
+#         def __repr__(self):
+#             return str(self.tensors)
     
 
-    # from typing import Dict, List
-    input = {}
+#     # from typing import Dict, List
+#     input = {}
     
-    input['4x'] = torch.rand((3, 512, 32, 32))
-    input['8x'] = torch.rand((3, 512, 16, 16))
-    for k, v in input.items():
-        print(k, v.shape)
+#     input['4x'] = torch.rand((3, 512, 32, 32))
+#     input['8x'] = torch.rand((3, 512, 16, 16))
+#     for k, v in input.items():
+#         print(k, v.shape)
     
-    # hs = transformer(encode_src, src_pos_embed, mask, 
-    #                 pqs, img_shape=samples.tensors.shape[-2:], **kwargs)
+#     # hs = transformer(encode_src, src_pos_embed, mask, 
+#     #                 pqs, img_shape=samples.tensors.shape[-2:], **kwargs)
