@@ -4,6 +4,7 @@ output_nohup
 outputs
 cache
 tools
+configs_con
 
 __pycache__/
 *.py[cod]
@@ -12,3 +13,5 @@ __pycache__/
 log_vis.ipynb
 paint_r2.py
 instru.py
+train.sh
+eval.sh
