@@ -1,7 +1,7 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=1
 DEFAULT_NPROC_PER_NODE=1
-DEFAULT_MASTER_PORT=10005
+DEFAULT_MASTER_PORT=10001
 DEFAULT_CONFIG_FILE_PATH="configs_con/baseline.yaml"
 
 NPROC_PER_NODE=${2:-$DEFAULT_NPROC_PER_NODE}
@@ -19,4 +19,4 @@ python -m torch.distributed.launch \
     --cfg="$CONFIG_FILE_PATH" 
     # --resume="/data/zlt/PET/RTC/outputs/Car/swin_t_encoder/best_checkpoint.pth"
 
-# nohup sh train.sh> output_nohup/f4x_wploss.log 2>&1 &
+# nohup sh train.sh> output_nohup/probloss005.log 2>&1 &

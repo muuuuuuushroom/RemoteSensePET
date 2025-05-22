@@ -967,7 +967,7 @@ class SetCriterion(nn.Module):
                 grid, mode='bilinear', align_corners=True
             ).squeeze(-1).squeeze(-1).squeeze(1)  # [N]
             loss_points_raw = (1.0 - prob_vals.unsqueeze(1)).expand(-1, 2)
-            loss_points_raw = loss_points_raw * 0.1
+            loss_points_raw = loss_points_raw * 0.05
             # loss = F.binary_cross_entropy(prob_vals, torch.ones_like(prob_vals), reduction='none')  # shape: [N]
             # loss_points_raw = loss.unsqueeze(1).expand(-1, 2)  # shape: [N, 2]
             # prob = kwargs['prob']
