@@ -9,7 +9,6 @@ configs_con
 __pycache__/
 *.py[cod]
 .vscode
-.sh
 
 train.sh
 log_vis.ipynb
