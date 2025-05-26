@@ -11,8 +11,8 @@ from .SOY import build_soy
 data_path = {
     'SHA': './data/ShanghaiTech/part_A/',
     'RTC': '/data/zlt/PET/RTC/data/RTC',
-    'People': '/data/zlt/PET/RTC/data/People',
     
+    'People': 'data/People',
     'Ship': 'data/Ship',
     'Car': 'data/Car',
     

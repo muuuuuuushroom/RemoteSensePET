@@ -5,10 +5,10 @@ lr: 0.0001
 lr_backbone: 0.00001
 weight_decay: 0.0001
 clip_max_norm: 0.1
-batch_size: 5 # 7 for debugging
-epochs: 100
+batch_size: 7 # 64 should be available on A6000
+epochs: 3000
 seed: 42
-eval_freq: 1
+eval_freq: 5
 
 # model parameters
 backbone: swin_t
@@ -34,28 +34,27 @@ set_cost_class: 1
 set_cost_point: 0.05
 ce_loss_coef: 1.0
 point_loss_coef: 5.0
+map_loss_coef: 1.0
 eos_coef: 0.5
 
 # dataset parameters
-dataset_file: Ship
+dataset_file: People
 data_path: ignore
 patch_size: 256   # patch_size = 512 originally
 num_workers: 2
 global_crop_ratio: 0.1
 
+save_ckpt_freq: 500
 hard_case: False
 augmented: False
-
 opt_query_decoder: True
-
 attn_splitter: False
-loss_f: normal # update  #gaussion_l2
+loss_f: normal # update  #gaussion_l2 #prob
 # info: 'constrain hxn predict'
 eval_path: mutilple_128
-matcher_opt: what
-predict: origin
-eval_pad: padding_center
-eval_robust: None
-prob_map_lc: None
+matcher_opt: normal
 
-output_dir: test
+predict: origin # hxn, origin
+prob_map_lc: None # f4x, None
+
+output_dir: test  #t_noencoder_opre_probF4x

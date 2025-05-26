@@ -687,10 +687,9 @@ class DecoderLayer(nn.Module):
             k_content = self.sa_kcontent_proj(tgt)
             k_pos = self.sa_kpos_proj(query_pos)
             v = self.sa_v_proj(tgt)
-
+            # proj before pos_embed
             q = q_content + q_pos
             k = k_content + k_pos
-            
             tgt2 = self.self_attn(q, k, value=v, attn_mask=tgt_mask,
                                   key_padding_mask=tgt_key_padding_mask)[0]
             # ========== End of Self-Attention =============
@@ -814,50 +813,50 @@ def _get_activation_fn(activation):
         return F.glu
     raise RuntimeError(F"activation should be relu/gelu, not {activation}.")
 
-if __name__ == '__main__':
-    opt = True
-    class Configs():
-        hidden_dim = 256
-        dropout = 0.0
-        nheads = 8
-        dim_feedforward = 512
-        dec_layers = 2
-        opt_query_decoder = opt
+# if __name__ == '__main__':
+#     opt = True
+#     class Configs():
+#         hidden_dim = 256
+#         dropout = 0.0
+#         nheads = 8
+#         dim_feedforward = 512
+#         dec_layers = 2
+#         opt_query_decoder = opt
     
-    args = Configs()
-    transformer = build_decoder(args)
-    print(transformer)
+#     args = Configs()
+#     transformer = build_decoder(args)
+#     print(transformer)
     
-    class NestedTensor(object):
-        def __init__(self, tensors, mask: Optional[Tensor]):
-            self.tensors = tensors
-            self.mask = mask
+#     class NestedTensor(object):
+#         def __init__(self, tensors, mask: Optional[Tensor]):
+#             self.tensors = tensors
+#             self.mask = mask
 
-        def to(self, device):
-            # type: (Device) -> NestedTensor # noqa # type: ignore
-            cast_tensor = self.tensors.to(device)
-            mask = self.mask
-            if mask is not None:
-                assert mask is not None
-                cast_mask = mask.to(device)
-            else:
-                cast_mask = None
-            return NestedTensor(cast_tensor, cast_mask)
+#         def to(self, device):
+#             # type: (Device) -> NestedTensor # noqa # type: ignore
+#             cast_tensor = self.tensors.to(device)
+#             mask = self.mask
+#             if mask is not None:
+#                 assert mask is not None
+#                 cast_mask = mask.to(device)
+#             else:
+#                 cast_mask = None
+#             return NestedTensor(cast_tensor, cast_mask)
 
-        def decompose(self):
-            return self.tensors, self.mask
+#         def decompose(self):
+#             return self.tensors, self.mask
 
-        def __repr__(self):
-            return str(self.tensors)
+#         def __repr__(self):
+#             return str(self.tensors)
     
 
-    # from typing import Dict, List
-    input = {}
+#     # from typing import Dict, List
+#     input = {}
     
-    input['4x'] = torch.rand((3, 512, 32, 32))
-    input['8x'] = torch.rand((3, 512, 16, 16))
-    for k, v in input.items():
-        print(k, v.shape)
+#     input['4x'] = torch.rand((3, 512, 32, 32))
+#     input['8x'] = torch.rand((3, 512, 16, 16))
+#     for k, v in input.items():
+#         print(k, v.shape)
     
     # hs = transformer(encode_src, src_pos_embed, mask, 
     #                 pqs, img_shape=samples.tensors.shape[-2:], **kwargs)

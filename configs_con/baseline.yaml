@@ -5,7 +5,7 @@ lr: 0.0001
 lr_backbone: 0.00001
 weight_decay: 0.0001
 clip_max_norm: 0.1
-batch_size: 64 # 64 should be available on A6000
+batch_size: 32 # 64 should be available on A6000
 epochs: 3000
 seed: 42
 eval_freq: 5
@@ -38,7 +38,7 @@ map_loss_coef: 1.0
 eos_coef: 0.5
 
 # dataset parameters
-dataset_file: Ship
+dataset_file: People
 data_path: ignore
 patch_size: 256   # patch_size = 512 originally
 num_workers: 2
@@ -49,12 +49,12 @@ hard_case: False
 augmented: False
 opt_query_decoder: False
 attn_splitter: False
-loss_f: prob # update  #gaussion_l2 #prob
+loss_f: normal # update  #gaussion_l2 #prob
 # info: 'constrain hxn predict'
 eval_path: mutilple_128
 matcher_opt: normal
 
-predict: origin
-prob_map_lc: None # f4x, None
+predict: origin # hxn, origin
+prob_map_lc: f4x # f4x, None
 
-output_dir: t_noencoder_opre_on-probLoss005  #t_noencoder_opre_probF4x
+output_dir: t_noencoder_opre_probf4x  #t_noencoder_opre_probF4x

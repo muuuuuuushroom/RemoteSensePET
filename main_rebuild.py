@@ -24,7 +24,7 @@ from util.data_aug_zlt import create_hard_case_sampler_train
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
-    parser.add_argument('--cfg', type=str, default='configs_con/baseline.yaml', 
+    parser.add_argument('--cfg', type=str, default='configs_con/test.yaml', 
                         help='base cfg file for training model')
     
     parser.add_argument('--save_ckpt_freq', type=int, default=500,

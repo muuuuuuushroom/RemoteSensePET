@@ -150,7 +150,7 @@ class SHA(Dataset):
         
         if self.train:
             if self.prob_map_lc == 'f4x':
-                h5_path = img_path.replace('train_data', 'prob_map_dyna_SAE') .replace('.jpg', '.h5')
+                h5_path = img_path.replace('train_data', 'prob_map_dyna_SAE').replace('.jpg', '.h5').replace('.png', '.h5')
                 with h5py.File(h5_path, 'r') as hf:
                     probability = np.array(hf['density'])
                     # probability = torch.from_numpy(density).float().unsqueeze(0)  # [1, H, W]
