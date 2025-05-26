@@ -257,7 +257,7 @@ class WinDecoderTransformer(nn.Module):
                             query_pos=query_embed, **kwargs)
             num_layer, num_elm, num_win, dim = hs_win.shape
             hs = hs_win.reshape(num_layer, num_elm * num_win, dim)
-            refer = references_win.reshape(1, num_elm * num_win, 2)
+            refer = references_win.reshape(num_layer, num_elm * num_win, 2)
             return hs, refer
             
         else:
@@ -400,18 +400,18 @@ class TransformerEncoder(nn.Module):
 #         agent = box.unsqueeze(-2) + point_offset
 #         return agent
 
-class FeatureDependentOffset(nn.Module):
-    def __init__(self, d_model, nhead):
-        super().__init__()
-        self.nhead = nhead
-        self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
+# class FeatureDependentOffset(nn.Module):
+#     def __init__(self, d_model, nhead):
+#         super().__init__()
+#         self.nhead = nhead
+#         self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
 
-    def forward(self, box, output):
-        N, B, _ = box.shape
-        offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
-        point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
-        agent = box.unsqueeze(-2) + point_offset
-        return agent
+#     def forward(self, box, output):
+#         N, B, _ = box.shape
+#         offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
+#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
+#         agent = box.unsqueeze(-2) + point_offset
+#         return agent
 
 class TransformerDecoder(nn.Module):
     """
@@ -432,14 +432,15 @@ class TransformerDecoder(nn.Module):
             self.point_offset = MLP(d_model, d_model, 2 * nhead, 2) # 4d
             self.ref_point_head = MLP(d_model, d_model, d_model, 2)  # 2*dm init
             
-            self.bbox_embed = None  
+            self.bbox_embed = MLP(d_model, d_model, 2, 3)
             # below in new box embed
             # self.bbox_embed = MLP(d_model, d_model, 2, 3)
             
             self.d_model = d_model
             self.nhead = nhead
             
-            self.offset_generator = FeatureDependentOffset(d_model, nhead)
+            # self.offset_generator = FeatureDependentOffset(d_model, nhead)
+            self.init_offset_generator = MLP(d_model, d_model, 2, 3)
 
             for layer_id in range(num_layers - 1):
                 self.layers[layer_id + 1].ca_qpos_proj = None
@@ -458,7 +459,13 @@ class TransformerDecoder(nn.Module):
 
         if self.opt_query_decoder:
             
-            box = box_unsigmoid.sigmoid()   # box.shape = [ decw*dech, bs*nums, C=2]
+            query_pos_2d = self.init_offset_generator(query_pos.reshape(-1, self.d_model))
+            nums, new_bs, dimen = box_unsigmoid.shape
+            query_pos_2d = query_pos_2d.reshape(nums, new_bs, dimen) 
+            query_pos_2d = (query_pos_2d.sigmoid() - 0.5) * 2.0
+            box = query_pos_2d
+            
+            # box = box_unsigmoid.sigmoid()   # box.shape = [ decw*dech, bs*nums, C=2]
             boxes = [box]
                 
             for layer_id, layer in enumerate(self.layers):
@@ -468,10 +475,10 @@ class TransformerDecoder(nn.Module):
                 
                 # box agent
                 N, B, _ = box.shape
-                # point_offset = self.point_offset(output).reshape(N, B, self.nhead, 2)
-                # agent = box[..., :2].unsqueeze(-2).repeat(1, 1, self.nhead, 1) + point_offset
+                point_offset = self.point_offset(output).reshape(N, B, self.nhead, 2)
+                agent = box[..., :2].unsqueeze(-2).repeat(1, 1, self.nhead, 1) + point_offset
                 
-                agent = self.offset_generator(box, output)
+                # agent = self.offset_generator(box, output)
                 
                         # (box[..., :2].unsqueeze(-2).repeat(1, 1, self.nhead, 1) / 2) * point_offset  
                                        
@@ -758,7 +765,7 @@ class DecoderLayer(nn.Module):
         query = self.with_pos_embed(tgt, query_pos)
         key = self.with_pos_embed(memory, pos)
            
-        tgt2 = self.multihead_attn(query, key, 
+        tgt2 = self.multihead_attn(query, key, # 32, 56/224/224, 256
                                    value=memory, attn_mask=memory_mask,
                                    key_padding_mask=memory_key_padding_mask)[0]
         tgt = tgt + tgt2

@@ -611,6 +611,7 @@ class PET(nn.Module):
         # kwargs['prob_map']=prob_map
         
         # prob map in feature
+
         if 'train' in kwargs and self.prob_map_lc == 'f4x':
             prob_map = self.prob_conv(features['4x'].tensors)
             H, W = samples.tensors.shape[-2], samples.tensors.shape[-1]
