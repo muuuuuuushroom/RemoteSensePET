@@ -11,22 +11,22 @@ seed: 42 # 42, 3407
 eval_freq: 5
 
 # model parameters
-backbone: swin_t
+backbone: swin_t # vgg16_bn, swin_t
 position_embedding: sine
 attn_type: softmax
 encoder_free: True
-dec_layers: 2
+dec_layers: 6
 dim_feedforward: 512
 hidden_dim: 256
 dropout: 0.0
 nheads: 8
-backbone_num_channels: 512
+backbone_num_channels: 512  # vgg16_bn = 256
 sparse_stride: 16
 dense_stride: 8
 enc_win_list: [[16, 8], [16, 8], [8, 4], [8, 4]]
-context_patch: [64, 32]
-sparse_dec_win_size: [8, 4]
-dense_dec_win_size: [4, 2]
+context_patch: [64, 32] #[64, 32]
+sparse_dec_win_size: [8, 4] #[8, 4]
+dense_dec_win_size: [4, 2] #[4, 2]
 syn_bn: 0
 
 # loss parameters
@@ -47,7 +47,7 @@ global_crop_ratio: 0.1
 save_ckpt_freq: 500
 hard_case: False
 augmented: False
-opt_query_decoder: False
+opt_query_decoder: True
 attn_splitter: False
 loss_f: normal # gaussion_l2, prob
 eval_path: mutilple_128
@@ -56,4 +56,4 @@ matcher_opt: normal
 predict: origin
 prob_map_lc: None # f4x, None
 
-output_dir: t_noencoder_opre_3407  #t_noencoder_opre_probF4x
+output_dir: t_noencoder_box1_layer6 #t_noencoder_opre_probF4x

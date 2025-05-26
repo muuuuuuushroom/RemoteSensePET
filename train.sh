@@ -19,4 +19,4 @@ python -m torch.distributed.launch \
     --cfg="$CONFIG_FILE_PATH" 
     # --resume="/data/zlt/PET/RTC/outputs/Car/swin_t_encoder/best_checkpoint.pth"
 
-# nohup sh train.sh> output_nohup/3407s.log 2>&1 &
+# nohup sh train.sh> output_nohup/box1.log 2>&1 &
