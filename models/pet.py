@@ -131,6 +131,11 @@ class BasePETCount(nn.Module):
             self.norm_dec = [size / self.patch_size for size in self.dec_win_size]
             self.refloc_embed = nn.Embedding(dec_w*dec_h, 2) 
             
+            self.bbox_embed = MLP(hidden_dim, hidden_dim, 2, 3)
+            self.transformer.decoder.bbox_embed = self.bbox_embed
+            nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
+            nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
+            
     def points_queris_embed(self, samples, stride=8, src=None, **kwargs):
         """
         Generate point query embedding during training
@@ -304,7 +309,7 @@ class BasePETCount(nn.Module):
         """
         # PET: hs[2, 8192, 256]
         outputs_class = self.class_embed(hs)
-        outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
+        # outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
         
         # normalize point-query coordinates
         img_shape = samples.tensors.shape[-2:]
@@ -312,26 +317,26 @@ class BasePETCount(nn.Module):
         points_queries = points_queries.float().cuda()
         
         if self.opt_query: # set2
-            refer = kwargs['refer'][-1]
+            refer = kwargs['refer']
             refer_bsig = inverse_sigmoid(refer)
-            if 'test' in kwargs:
-                refer_bsig[...,0] /= (img_h / self.patch_size)
-                refer_bsig[...,1] /= (img_w / self.patch_size) 
-            points_queries = refer_bsig + points_queries
-            points_queries[..., 0] /= img_h
-            points_queries[..., 1] /= img_w
+            tmp = self.bbox_embed(hs)
+            tmp += refer_bsig
+            outputs_offsets = tmp.sigmoid()
+            # points_queries[..., 0] /= img_h
+            # points_queries[..., 1] /= img_w            
+            # points_queries = outputs_coord + points_queries
         else:
-            points_queries[:, 0] /= img_h
-            points_queries[:, 1] /= img_w
+            outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
+            
+        points_queries[:, 0] /= img_h
+        points_queries[:, 1] /= img_w
 
-        if self.opt_query: # set2
-            outputs_points = points_queries
-        else:
-            # rescale offset range during testing
-            if 'test' in kwargs:
-                outputs_offsets[...,0] /= (img_h / self.patch_size)
-                outputs_offsets[...,1] /= (img_w / self.patch_size)
-            outputs_points = outputs_offsets[-1] + points_queries
+        # rescale offset range during testing
+        if 'test' in kwargs:
+            outputs_offsets[...,0] /= (img_h / self.patch_size)
+            outputs_offsets[...,1] /= (img_w / self.patch_size)
+            
+        outputs_points = outputs_offsets[-1] + points_queries
             
         out = {'pred_logits': outputs_class[-1], 
                'pred_points': outputs_points, 
@@ -783,7 +788,7 @@ class SetCriterion(nn.Module):
         1) compute hungarian assignment between ground truth points and the outputs of the model
         2) supervise each pair of matched ground-truth / prediction and split map
     """
-    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses, sparse_stride, dense_stride, map_loss):
+    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses, sparse_stride, dense_stride, map_loss, opt_query):
         """
         Parameters:
             num_classes: one-class in crowd counting
@@ -804,6 +809,7 @@ class SetCriterion(nn.Module):
         # self.div_thrs_dict = {8: 0.0, 4:0.5}
         self.div_thrs_dict = {sparse_stride: 0.0, dense_stride:0.5}
         self.map_loss = map_loss
+        self.opt_query = opt_query
     
     def loss_labels(self, outputs, targets, indices, num_points, log=True, **kwargs):
         """
@@ -876,7 +882,6 @@ class SetCriterion(nn.Module):
         target_points[:, 0] /= img_h
         target_points[:, 1] /= img_w
         
-        # GT probability map
         if kwargs['loss_f'] == 'gaussion_l2':
             # loss_points_raw = weighted_smooth_l1_loss(src_points, target_points, sigma=16.0)
             pass
@@ -1055,6 +1060,7 @@ def build_pet(args):
     criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict,
                              eos_coef=args.eos_coef, losses=losses,
                              sparse_stride=args.sparse_stride, dense_stride=args.dense_stride,
-                             map_loss=args.prob_map_lc)
+                             map_loss=args.prob_map_lc,
+                             opt_query=args.opt_query_decoder)
     criterion.to(device)
     return model, criterion

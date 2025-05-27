@@ -19,7 +19,6 @@ from datasets import build_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
 from util.custom_log import *
-from util.data_aug_zlt import create_hard_case_sampler_train
 
 
 def get_args_parser():
@@ -39,16 +38,12 @@ def get_args_parser():
     parser.add_argument('--eval_pad', default='padding_center')
     parser.add_argument('--eval_robust', default=[])
     parser.add_argument('--robust_para', default=None)
-    
-    # parser.add_argument('--prob_map_lc', default=None)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
-    # pet decoder
-    # parser.add_argument('--opt_query_decoder', default=True, type=bool, help='reference: box-detr')
     return parser
 
 
