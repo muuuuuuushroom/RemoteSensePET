@@ -55,11 +55,10 @@ def get_args_parser():
 def main(args):
     utils.init_distributed_mode(args)
     print(args)
-    print('batch_size = ', args.batch_size)
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = args.seed + utils.get_rank()
+    seed = args.seed + utils.get_rank() # rank: distributed training
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -69,14 +68,13 @@ def main(args):
     model.to(device)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'n_parameters: {n_parameters}')
-    if args.syn_bn:
+    if args.syn_bn: # distributed training
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     model_without_ddp = model
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
-    # model = torch.compile(model)
     
     # build optimizer
     param_dicts = [
@@ -163,7 +161,6 @@ def main(args):
         lr_scheduler.step()
 
         # save checkpoint
-        # save_list = [50, 100, 150, 250, 350, 400, 450, 500] # if args.opt_query_decoder else []   # box-detr comparision
         if (epoch+1) % args.save_ckpt_freq == 0:     #or (epoch+1) in save_list:
             checkpoint_paths = [output_dir / f'epoch_{epoch+1}.pth']
             for checkpoint_path in checkpoint_paths:

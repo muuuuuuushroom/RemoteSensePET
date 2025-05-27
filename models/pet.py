@@ -130,36 +130,6 @@ class BasePETCount(nn.Module):
             dec_w, dec_h = self.dec_win_size
             self.norm_dec = [size / self.patch_size for size in self.dec_win_size]
             self.refloc_embed = nn.Embedding(dec_w*dec_h, 2) 
-   
-    def points_queris_embed_constrain(self, samples, stride=8, src=None, **kwargs):
-        """
-        unfinished
-        """
-        
-        # generate point queries
-        H, W = samples.shape[-2:]
-        shift_x = (torch.arange(0,H,stride) + stride//2).long() # TODO check
-        shift_y = (torch.arange(0,W,stride) + stride//2).long()
-        shift_y, shift_x = torch.meshgrid(shift_y, shift_x)
-        points_queries = torch.vstack([shift_y.flatten(), shift_x.flatten()]).permute(1,0) 
-        
-        h, w = shift_x.shape 
-
-        # get point queries embedding
-        dense_input_embed = kwargs['dense_input_embed']
-        query_embed = dense_input_embed[:, :, points_queries[:, 0], points_queries[:, 1]]
-        bs, c = query_embed.shape[:2]
-        query_embed = query_embed.view(bs, c, h, w) 
-
-        # get point queries features, equivalent to nearest interpolation
-        bs,c,h,w = src.shape
-        shift_y_down, shift_x_down = points_queries[:, 0] // stride, points_queries[:, 1] // stride
-        # points_queries = repeat(points_queries,'n d->b n d',b=bs)
-
-        query_feats = src[:, :, shift_y_down,shift_x_down]
-        query_feats = query_feats.view(bs, c, h, w)
-
-        return  query_embed, points_queries, query_feats
             
     def points_queris_embed(self, samples, stride=8, src=None, **kwargs):
         """
@@ -210,18 +180,6 @@ class BasePETCount(nn.Module):
         input = samples.tensors
         image_shape = torch.tensor(input.shape[2:])
         shape = (image_shape + stride//2 -1) // stride
-        
-        # # query scale up
-        # refbox = kwargs['refbox']
-        # # refbox = refbox.permute(1,0)    # 2xN --> Nx2
-        # patch_size = 256
-        # scale_x = image_shape[1] / patch_size
-        # scale_y = image_shape[0] / patch_size
-        # multi_scale = int(scale_x * scale_y)
-        # scaled_refbox = refbox.repeat(multi_scale, 1)
-        # # scaled_refbox = torch.clone(refbox)
-        # # scaled_refbox[:, 0] *= scale_x
-        # # scaled_refbox[:, 1] *= scale_y  # scaled_refbox  Nx2
 
         # generate points queries
         shift_x = ((torch.arange(0, shape[1]) + 0.5) * stride).long()
@@ -291,9 +249,6 @@ class BasePETCount(nn.Module):
         return out
     
     def predict_hxn(self, samples, points_queries, hs, **kwargs):
-        """
-        Crowd prediction
-        """
         outputs_class = self.class_embed(hs)
         # normalize to -1~1
         outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0 
@@ -359,6 +314,9 @@ class BasePETCount(nn.Module):
         if self.opt_query: # set2
             refer = kwargs['refer'][-1]
             refer_bsig = inverse_sigmoid(refer)
+            if 'test' in kwargs:
+                refer_bsig[...,0] /= (img_h / self.patch_size)
+                refer_bsig[...,1] /= (img_w / self.patch_size) 
             points_queries = refer_bsig + points_queries
             points_queries[..., 0] /= img_h
             points_queries[..., 1] /= img_w
@@ -366,12 +324,14 @@ class BasePETCount(nn.Module):
             points_queries[:, 0] /= img_h
             points_queries[:, 1] /= img_w
 
-        # rescale offset range during testing
-        if 'test' in kwargs:
-            outputs_offsets[...,0] /= (img_h / self.patch_size)
-            outputs_offsets[...,1] /= (img_w / self.patch_size)
-            
-        outputs_points = outputs_offsets[-1] + points_queries
+        if self.opt_query: # set2
+            outputs_points = points_queries
+        else:
+            # rescale offset range during testing
+            if 'test' in kwargs:
+                outputs_offsets[...,0] /= (img_h / self.patch_size)
+                outputs_offsets[...,1] /= (img_w / self.patch_size)
+            outputs_points = outputs_offsets[-1] + points_queries
             
         out = {'pred_logits': outputs_class[-1], 
                'pred_points': outputs_points, 
@@ -445,7 +405,6 @@ class PET(nn.Module):
         # zlt: object query in decoder from box-detr
         self.opt_query_decoder = args.opt_query_decoder
         self.loss_f = args.loss_f
-        print(f'loss f: {self.loss_f}')
         self.total_epochs = args.epochs
         
         # positional embedding
@@ -635,67 +594,6 @@ class PET(nn.Module):
         else:
             out = self.test_forward(samples, features, pos, **kwargs)  
         return out
-
-    def pet_forward(self, samples, features, pos, **kwargs):
-        # context encoding
-            # encode_feats = 8x
-            # src = tensors of F, 
-            # src_pos = backbone pos
-        src, mask = features[self.encode_feats].decompose()
-        src_pos_embed = pos[self.encode_feats]
-        assert mask is not None
-        # print(src.shape, src_pos_embed.shape, mask.shape, encode_src.shape)  # 8*256*32*32 sparse
-        if self.encoder_free:
-            context_info = (src, src_pos_embed, mask)
-        else:
-            encode_src = self.context_encoder(src, src_pos_embed, mask)  # features['8x'] encoding --> B*hidden_dim*H*W(32)
-            context_info = (encode_src, src_pos_embed, mask)
-        
-        # apply quadtree splitter
-        bs, _, src_h, src_w = src.shape # _ = hidden_dim
-        sp_h, sp_w = src_h, src_w                         # sparse 16, 16                        
-        ds_h, ds_w = int(src_h * 2), int(src_w * 2)       # dense = sparse * 2, which 32, 32
-        
-        src = encode_src if not self.encoder_free else src
-        if self.attn_splitter:
-            split_map = self.quadtree_splitter(src, src_pos_embed)  # split_map: B*1*src_h/4*src_w/8   bs*1*4*2
-        else:
-            split_map = self.quadtree_splitter(src)  # split_map: B*1*src_h/4*src_w/8
-            
-        split_map_dense = F.interpolate(split_map, (ds_h, ds_w)).reshape(bs, -1)  # nearest # dense split       1 means waiting for further revision
-        split_map_sparse = 1 - F.interpolate(split_map, (sp_h, sp_w)).reshape(bs, -1)       # sparse split      we want 0 in sparse area
-        
-        # all split dense
-        # split_map_dense = torch.ones_like(split_map_dense)
-        # split_map_sparse = torch.zeros_like(split_map_sparse)
-        
-        # quadtree decoder
-        # quadtree layer0 forward (sparse)
-        if 'train' in kwargs or (split_map_sparse > 0.5).sum() > 0:
-            kwargs['div'] = split_map_sparse.reshape(bs, sp_h, sp_w)  # bs*256 -> bs*h*w
-            # if 'swin' in self.backbone_type:  kwargs['dec_win_size'] = [8, 4]  # WH
-            kwargs['dec_win_size'] = self.sparse_dec_win_size
-            outputs_sparse = self.quadtree_sparse(samples, features, context_info, **kwargs)
-        else:
-            outputs_sparse = None
-        
-        # quadtree layer1 forward (dense)
-        if 'train' in kwargs or (split_map_dense > 0.5).sum() > 0:
-            kwargs['div'] = split_map_dense.reshape(bs, ds_h, ds_w)
-            # if 'swin' in self.backbone_type:  kwargs['dec_win_size'] = [4, 2]
-            kwargs['dec_win_size'] = self.dense_dec_win_size
-            outputs_dense = self.quadtree_dense(samples, features, context_info, **kwargs)
-        else:
-            outputs_dense = None
-        
-        # format outputs
-        outputs = dict()
-        outputs['sparse'] = outputs_sparse
-        outputs['dense'] = outputs_dense
-        outputs['split_map_raw'] = split_map
-        outputs['split_map_sparse'] = split_map_sparse
-        outputs['split_map_dense'] = split_map_dense
-        return outputs
     
     def train_forward(self, samples, features, pos, **kwargs):
         outputs = self.pet_forward(samples, features, pos, **kwargs)
@@ -754,20 +652,60 @@ class PET(nn.Module):
             
         return div_out
 
-
-def calculate_weight(src_points, target_points, sigma):
-    
-    distances = torch.norm(src_points - target_points, dim=-1)
-    weights = torch.exp(-distances ** 2 / (2 * sigma ** 2))
-    return weights
-
-def weighted_smooth_l1_loss(src_points, target_points, sigma):
-
-    loss_points_raw = F.smooth_l1_loss(src_points, target_points, reduction='none')
-    weights = calculate_weight(src_points, target_points, sigma)
-    weighted_loss = loss_points_raw * weights.unsqueeze(-1)
-    
-    return weighted_loss
+    def pet_forward(self, samples, features, pos, **kwargs):
+        # context encoding
+            # encode_feats = 8x
+            # src = tensors of F, 
+            # src_pos = backbone pos
+        src, mask = features[self.encode_feats].decompose()
+        src_pos_embed = pos[self.encode_feats]
+        assert mask is not None
+        # print(src.shape, src_pos_embed.shape, mask.shape, encode_src.shape)  # 8*256*32*32 sparse
+        if self.encoder_free:
+            context_info = (src, src_pos_embed, mask)
+        else:
+            encode_src = self.context_encoder(src, src_pos_embed, mask)  # features['8x'] encoding --> B*hidden_dim*H*W(32)
+            context_info = (encode_src, src_pos_embed, mask)
+        
+        # apply quadtree splitter
+        bs, _, src_h, src_w = src.shape # _ = hidden_dim
+        sp_h, sp_w = src_h, src_w                         # sparse 16, 16                        
+        ds_h, ds_w = int(src_h * 2), int(src_w * 2)       # dense = sparse * 2, which 32, 32
+        
+        src = encode_src if not self.encoder_free else src
+        if self.attn_splitter:
+            split_map = self.quadtree_splitter(src, src_pos_embed)  # split_map: B*1*src_h/4*src_w/8   bs*1*4*2
+        else:
+            split_map = self.quadtree_splitter(src)  # split_map: B*1*src_h/4*src_w/8
+            
+        split_map_dense = F.interpolate(split_map, (ds_h, ds_w)).reshape(bs, -1)  # nearest # dense split       1 means waiting for further revision
+        split_map_sparse = 1 - F.interpolate(split_map, (sp_h, sp_w)).reshape(bs, -1)       # sparse split      we want 0 in sparse area
+        
+        # quadtree decoder
+        # quadtree layer0 forward (sparse)
+        if 'train' in kwargs or (split_map_sparse > 0.5).sum() > 0:
+            kwargs['div'] = split_map_sparse.reshape(bs, sp_h, sp_w)  # bs*256 -> bs*h*w
+            kwargs['dec_win_size'] = self.sparse_dec_win_size
+            outputs_sparse = self.quadtree_sparse(samples, features, context_info, **kwargs)
+        else:
+            outputs_sparse = None
+        
+        # quadtree layer1 forward (dense)
+        if 'train' in kwargs or (split_map_dense > 0.5).sum() > 0:
+            kwargs['div'] = split_map_dense.reshape(bs, ds_h, ds_w)
+            kwargs['dec_win_size'] = self.dense_dec_win_size
+            outputs_dense = self.quadtree_dense(samples, features, context_info, **kwargs)
+        else:
+            outputs_dense = None
+        
+        # format outputs
+        outputs = dict()
+        outputs['sparse'] = outputs_sparse
+        outputs['dense'] = outputs_dense
+        outputs['split_map_raw'] = split_map
+        outputs['split_map_sparse'] = split_map_sparse
+        outputs['split_map_dense'] = split_map_dense
+        return outputs
 
 def generate_gaussian_kernel(size, sigma, device):
     ax = torch.arange(size, device=device) - size // 2
@@ -777,19 +715,6 @@ def generate_gaussian_kernel(size, sigma, device):
     return kernel
 
 def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_h, img_w, device, alpha=0.4):
-    """
-    Build probability (density) map from point coordinates.
-    
-    Args:
-        target_points: [N, 2] (normalized x, y)
-        batch_indices: [N] indicating image index for each point
-        img_h, img_w: height and width of output maps
-        device: target device (cuda / cpu)
-        alpha: scale factor for dynamic sigma estimation
-    
-    Returns:
-        density: [B, 1, H, W] torch tensor
-    """
     B = int(batch_indices.max().item()) + 1
     density = torch.zeros((B, 1, img_h, img_w), dtype=torch.float32, device=device)
 
@@ -953,7 +878,8 @@ class SetCriterion(nn.Module):
         
         # GT probability map
         if kwargs['loss_f'] == 'gaussion_l2':
-            loss_points_raw = weighted_smooth_l1_loss(src_points, target_points, sigma=16.0)
+            # loss_points_raw = weighted_smooth_l1_loss(src_points, target_points, sigma=16.0)
+            pass
         elif kwargs['loss_f'] == 'prob':
             gt_prob_map = build_density_map_from_points_with_kdtree(
                 target_points, batch_indices, img_h, img_w, device=src_points.device
