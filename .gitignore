@@ -5,6 +5,7 @@ outputs
 cache
 tools
 configs_con
+models/backbones/vgg.py
 
 __pycache__/
 *.py[cod]
