@@ -117,6 +117,7 @@ class BasePETCount(nn.Module):
         
         # box-detr para needed:
         self.opt_query = args.opt_query_decoder
+        self.opt_query_con = args.opt_query_con
         
         if args.opt_query_decoder:
             
@@ -135,6 +136,19 @@ class BasePETCount(nn.Module):
             self.transformer.decoder.bbox_embed = self.bbox_embed
             nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
             nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
+        
+        if args.opt_query_con:
+            self.bbox_embed = MLP(hidden_dim, hidden_dim, 2, 3)
+            # self.transformer.decoder.bbox_embed = self.bbox_embed
+            nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
+            nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
+            
+            # adapt:
+            self.dec_win_size = args.sparse_dec_win_size if quadtree_layer == 'sparse' else args.dense_dec_win_size
+            # sparse_dec_win_size: [8, 4]  dense_dec_win_size: [4, 2]
+            dec_w, dec_h = self.dec_win_size
+            self.norm_dec = [size / self.patch_size for size in self.dec_win_size]
+            self.refloc_embed = nn.Embedding(dec_w*dec_h, 2) 
             
     def points_queris_embed(self, samples, stride=8, src=None, **kwargs):
         """
@@ -325,6 +339,16 @@ class BasePETCount(nn.Module):
             # points_queries[..., 0] /= img_h
             # points_queries[..., 1] /= img_w            
             # points_queries = outputs_coord + points_queries
+        elif self.opt_query_con:
+            refer = kwargs['refer'][-1]
+            reference_before_sigmoid = inverse_sigmoid(refer)
+            outputs_coords = []
+            for lvl in range(hs.shape[0]):
+                tmp = self.bbox_embed(hs[lvl])
+                tmp[..., :2] += reference_before_sigmoid
+                outputs_coord = tmp.sigmoid()
+                outputs_coords.append(outputs_coord)
+            outputs_offsets = torch.stack(outputs_coords)
         else:
             outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
             
@@ -356,8 +380,8 @@ class BasePETCount(nn.Module):
         encode_src, src_pos_embed, mask = context_info
         # box-detr weight:
         # refbox = self.refpoint_embed.weight if self.opt_query else None
-        refloc = self.refloc_embed.weight if self.opt_query else None
-        if self.opt_query:
+        refloc = self.refloc_embed.weight if self.opt_query or self.opt_query_con else None
+        if self.opt_query or self.opt_query_con:
             # kwargs['refbox'] = refbox
             kwargs['refloc'] = refloc
             kwargs['dec_win_size_n'] = self.norm_dec
@@ -372,7 +396,7 @@ class BasePETCount(nn.Module):
         # kwargs['pq_stride'] = self.pq_stride
         kwargs['quadtree_layer'] = self.quadtree_layer
         
-        if self.opt_query:
+        if self.opt_query or self.opt_query_con:
             hs, refer = self.transformer(encode_src, src_pos_embed, mask, pqs, 
                               img_shape=samples.tensors.shape[-2:], 
                               **kwargs # refbox is in the kwargs['refbox']

@@ -137,18 +137,20 @@ class WinDecoderTransformer(nn.Module):
                  attn_type='softmax',
                  opt_query_decoder=False,
                  # anchor-detr patterns
-                 num_patterns=0, 
+                 num_patterns=0,
+                 opt_query_con=False, 
                  ):
         super().__init__()
         decoder_layer = DecoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, attn_type, 
-                                                opt_query_decoder)
+                                                opt_query_decoder, opt_query_con)
 
         decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                             return_intermediate=return_intermediate_dec,
                                             d_model=d_model, nhead=nhead, 
-                                            opt_query_decoder=opt_query_decoder)
+                                            opt_query_decoder=opt_query_decoder,
+                                            opt_query_con=opt_query_con)
         self._reset_parameters()
 
         self.dec_win_w, self.dec_win_h = dec_win_w, dec_win_h
@@ -157,6 +159,7 @@ class WinDecoderTransformer(nn.Module):
         self.num_layer = num_decoder_layers
         
         self.opt_query_decoder = opt_query_decoder
+        self.opt_query_con = opt_query_con
              
     def _reset_parameters(self):
         for p in self.parameters():
@@ -192,7 +195,7 @@ class WinDecoderTransformer(nn.Module):
         tgt = window_partition(query_feats, window_size_h=dec_win_h, window_size_w=dec_win_w) 
         
         # box_detr
-        if self.opt_query_decoder:
+        if self.opt_query_decoder or self.opt_query_con:
             refloc = kwargs['refloc']
             num_wins = tgt.shape[1]
             refloc_win = refloc.unsqueeze(1).repeat(1, num_wins, 1)
@@ -241,16 +244,15 @@ class WinDecoderTransformer(nn.Module):
         _, points_queries, _, _, refbox_scale = kwargs['pqs'] # test: shape 8*1024*2
         # points_queries_scale = query_partition(points_queries, query_feats, dec_win_h, dec_win_w, test=True)   # 8192, 2 -> 8, 1024, 2
         
-        if self.opt_query_decoder:
-            refloc = kwargs['refloc']
-            num_wins = tgt.shape[1]
-            refloc_win = refloc.unsqueeze(1).repeat(1, num_wins, 1)
-            
+        # if self.opt_query_decoder:
             # we try:
             # refloc_win = points_queries.reshape(-1, num_wins, 2).to(refloc.device)
 
             
-        if self.opt_query_decoder:
+        if self.opt_query_decoder or self.opt_query_con:
+            refloc = kwargs['refloc']
+            num_wins = tgt.shape[1]
+            refloc_win = refloc.unsqueeze(1).repeat(1, num_wins, 1)
             
             hs_win, references_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win,
                             box_unsigmoid = refloc_win, #refbox,
@@ -293,7 +295,7 @@ class WinDecoderTransformer(nn.Module):
             memory_win = memory_win[:,v_idx]
             pos_embed_win = pos_embed_win[:,v_idx]
             mask_win = mask_win[v_idx]
-            if self.opt_query_decoder:
+            if self.opt_query_decoder or self.opt_query_con:
                 hs, refer = self.decoder_forward_dynamic(query_feats, query_embed, 
                                     memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w, src.shape, **kwargs)
                 return hs, refer
@@ -303,7 +305,7 @@ class WinDecoderTransformer(nn.Module):
                 return hs
         else:
             # train decoder forward 
-            if self.opt_query_decoder:
+            if self.opt_query_decoder or self.opt_query_con:
                 hs, refer = self.decoder_forward(query_feats, query_embed,
                                     memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w, src.shape, **kwargs)
                 return hs.transpose(1, 2), refer.transpose(1, 2)
@@ -359,72 +361,74 @@ class TransformerEncoder(nn.Module):
 
         return output
 
-# class GaussianPointOffset(nn.Module):
-#     def __init__(self, d_model, nhead, sigma=0.05):
-#         super(GaussianPointOffset, self).__init__()
-#         self.d_model = d_model
-#         self.nhead = nhead
-#         self.sigma = sigma
-#         self.offset_mlp = MLP(d_model, d_model, 2 * nhead, 2)
+# class usless_forms:
+#     class GaussianPointOffset(nn.Module):
+#         def __init__(self, d_model, nhead, sigma=0.05):
+#             super(GaussianPointOffset, self).__init__()
+#             self.d_model = d_model
+#             self.nhead = nhead
+#             self.sigma = sigma
+#             self.offset_mlp = MLP(d_model, d_model, 2 * nhead, 2)
 
-#     def forward(self, output, box):
-#         N, B, _ = box.shape     # num queries, bs, 2
-#         base_offset = self.offset_mlp(output).reshape(N, B, self.nhead, 2)
-#         gaussian_noise = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma
-#         point_offset = base_offset + gaussian_noise
-#         agent = box.unsqueeze(-2) + point_offset
-#         return agent
-    
-# class DynamicOffset(nn.Module):
-#     def __init__(self, nhead, init_scale=0.1):
-#         super().__init__()
-#         self.nhead = nhead
-#         self.scale = nn.Parameter(torch.full((nhead, 1), init_scale))
+#         def forward(self, output, box):
+#             N, B, _ = box.shape     # num queries, bs, 2
+#             base_offset = self.offset_mlp(output).reshape(N, B, self.nhead, 2)
+#             gaussian_noise = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma
+#             point_offset = base_offset + gaussian_noise
+#             agent = box.unsqueeze(-2) + point_offset
+#             return agent
+        
+#     class DynamicOffset(nn.Module):
+#         def __init__(self, nhead, init_scale=0.1):
+#             super().__init__()
+#             self.nhead = nhead
+#             self.scale = nn.Parameter(torch.full((nhead, 1), init_scale))
 
-#     def forward(self, box, output):
-#         N, B, _ = box.shape
-#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device)
-#         point_offset = point_offset * self.scale.view(1, 1, self.nhead, 1)
-#         agent = box.unsqueeze(-2) + point_offset
-#         return agent
-    
-# class LearnableGaussian(nn.Module):
-#     def __init__(self, nhead, init_sigma=0.1):
-#         super().__init__()
-#         self.nhead = nhead
-#         self.sigma = nn.Parameter(torch.full((nhead, 1), init_sigma))  # 每个 head 独立学习
+#         def forward(self, box, output):
+#             N, B, _ = box.shape
+#             point_offset = torch.randn(N, B, self.nhead, 2, device=box.device)
+#             point_offset = point_offset * self.scale.view(1, 1, self.nhead, 1)
+#             agent = box.unsqueeze(-2) + point_offset
+#             return agent
+        
+#     class LearnableGaussian(nn.Module):
+#         def __init__(self, nhead, init_sigma=0.1):
+#             super().__init__()
+#             self.nhead = nhead
+#             self.sigma = nn.Parameter(torch.full((nhead, 1), init_sigma))  # 每个 head 独立学习
 
-#     def forward(self, box, output):
-#         N, B, _ = box.shape
-#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma.view(1, 1, self.nhead, 1)
-#         agent = box.unsqueeze(-2) + point_offset
-#         return agent
+#         def forward(self, box, output):
+#             N, B, _ = box.shape
+#             point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * self.sigma.view(1, 1, self.nhead, 1)
+#             agent = box.unsqueeze(-2) + point_offset
+#             return agent
 
-# class FeatureDependentOffset(nn.Module):
-#     def __init__(self, d_model, nhead):
-#         super().__init__()
-#         self.nhead = nhead
-#         self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
+#     class FeatureDependentOffset(nn.Module):
+#         def __init__(self, d_model, nhead):
+#             super().__init__()
+#             self.nhead = nhead
+#             self.offset_generator = MLP(d_model, d_model, 2 * nhead, 2)
 
-#     def forward(self, box, output):
-#         N, B, _ = box.shape
-#         offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
-#         point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
-#         agent = box.unsqueeze(-2) + point_offset
-#         return agent
+#         def forward(self, box, output):
+#             N, B, _ = box.shape
+#             offset_range = self.offset_generator(output).view(N, B, self.nhead, 2)
+#             point_offset = torch.randn(N, B, self.nhead, 2, device=box.device) * offset_range
+#             agent = box.unsqueeze(-2) + point_offset
+#             return agent
 
 class TransformerDecoder(nn.Module):
     """
     Base Transformer Decoder
     """
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False,
-                 d_model=256, nhead=8, opt_query_decoder=False):
+                 d_model=256, nhead=8, opt_query_decoder=False, opt_query_con=False):
         super().__init__()
         self.layers = _get_clones(decoder_layer, num_layers)
         self.num_layers = num_layers
         self.norm = norm
         self.return_intermediate = return_intermediate
         self.opt_query_decoder = opt_query_decoder
+        self.opt_query_con = opt_query_con
         
         if opt_query_decoder:
             # box-detr
@@ -444,6 +448,14 @@ class TransformerDecoder(nn.Module):
 
             for layer_id in range(num_layers - 1):
                 self.layers[layer_id + 1].ca_qpos_proj = None
+                
+        if opt_query_con:
+            self.d_model = d_model
+            self.nhead = nhead
+            self.query_scale = MLP(d_model, d_model, d_model, 2)
+            self.ref_point_head = MLP(d_model, d_model, 2, 2)
+            for layer_id in range(num_layers - 1):
+                self.layers[layer_id + 1].ca_qpos_proj = None
     
     def forward(self, tgt, memory,
                 tgt_mask: Optional[Tensor] = None,
@@ -454,99 +466,41 @@ class TransformerDecoder(nn.Module):
                 query_pos: Optional[Tensor] = None,
                 box_unsigmoid: Optional[Tensor] = None,
                 **kwargs):
-        output = tgt
-        intermediate = []
 
         if self.opt_query_decoder:
-            
-            query_pos_2d = self.init_offset_generator(query_pos.reshape(-1, self.d_model))
-            nums, new_bs, dimen = box_unsigmoid.shape
-            query_pos_2d = query_pos_2d.reshape(nums, new_bs, dimen) 
-            query_pos_2d = (query_pos_2d.sigmoid() - 0.5) * 2.0
-            box = query_pos_2d
-            
-            # box = box_unsigmoid.sigmoid()   # box.shape = [ decw*dech, bs*nums, C=2]
-            boxes = [box]
-                
-            for layer_id, layer in enumerate(self.layers):
-                # get sine embedding for the query vector 
-                query_pos = self.ref_point_head(gen_sineembed_for_position(box))
-                                                # ...,2 -> ...,256
-                
-                # box agent
-                N, B, _ = box.shape
-                point_offset = self.point_offset(output).reshape(N, B, self.nhead, 2)
-                agent = box[..., :2].unsqueeze(-2).repeat(1, 1, self.nhead, 1) + point_offset
-                
-                # agent = self.offset_generator(box, output)
-                
-                        # (box[..., :2].unsqueeze(-2).repeat(1, 1, self.nhead, 1) / 2) * point_offset  
-                                       
-                #if +point offset directly:
-                # agent = box[..., :2].unsqueeze(2).repeat(1, 1, self.nhead, 1) + (box[..., 2:].unsqueeze(2).repeat(1, 1, self.nhead, 1) / 2) * point_offset
-                # agent = box[..., :2].unsqueeze(2).repeat(1, 1, self.nhead, 1) + (fixed_size / 2) * point_offset
-                
-                # new box
-                # agent_new = box[..., :2].unsqueeze(2) + point_offset
-                
-                # no offset box
-                # agent = box[..., :2].unsqueeze(2).repeat(1, 1, self.nhead, 1)
-                
-                query_sine_embed = gen_sineembed_for_position(agent.flatten(1, 2)).reshape(N, B, self.nhead * self.d_model)
-                
-                # For the first decoder layer, we do not apply transformation over p_s
-                if layer_id == 0:
-                    pos_transformation = 1
-                else:
-                    pos_transformation = self.query_scale(output).repeat(1, 1, self.nhead)
+            return self.forward_box(tgt=tgt, 
+                                    memory=memory,
+                                    memory_key_padding_mask=memory_key_padding_mask,
+                                    pos=pos,
+                                    query_pos=query_pos,
+                                    box_unsigmoid=box_unsigmoid,
+                                    **kwargs)
 
-                # apply transformation
-                query_sine_embed = query_sine_embed * pos_transformation
-                
-                output = layer(output, memory, tgt_mask=tgt_mask, # None 
-                        memory_mask=memory_mask,              # None
-                        tgt_key_padding_mask=tgt_key_padding_mask,  # None
-                        memory_key_padding_mask=memory_key_padding_mask,    # memory_key_padding_mask = mask_win = None
-                        pos=pos, query_pos=query_pos, 
-                        # box-detr:
-                        query_sine_embed=query_sine_embed,
-                        layer_id=layer_id)
-                
-                # iter update            
-                if self.bbox_embed is not None:
-                    tmp = self.bbox_embed(output)
-                    tmp += inverse_sigmoid(box)
-                    new_box = tmp.sigmoid()
-                    if layer_id != self.num_layers - 1:
-                        boxes.append(new_box)
-                    box = new_box.detach()
-                
-                if self.return_intermediate:
-                    if self.norm is not None:
-                        intermediate.append(self.norm(output))
-                    else:
-                        intermediate.append(output)
-                
-            if self.norm is not None:
-                output = self.norm(output)
-                if self.return_intermediate:
-                    intermediate.pop()
-                    intermediate.append(output)
 
-            if self.return_intermediate:
-                if self.bbox_embed is not None:
-                    return [
-                        torch.stack(intermediate),  #.transpose(1, 2),      # torch.Size([2, 8, 1024, 256])
-                        torch.stack(boxes)  #.transpose(1, 2),
-                    ]
-                else: # return here
-                    return [
-                        torch.stack(intermediate),  #.transpose(1, 2), 
-                        box.unsqueeze(0)  #.transpose(1, 2)
-                    ]  
-                          
-            return output.unsqueeze(0)
-
+        if self.opt_query_con:
+            return self.forward_con(tgt=tgt, 
+                                    memory=memory,
+                                    memory_key_padding_mask=memory_key_padding_mask,
+                                    pos=pos,
+                                    query_pos=query_pos,
+                                    box_unsigmoid=box_unsigmoid,
+                                    **kwargs)
+        
+        return self.forward_pet(tgt=tgt, 
+                                memory=memory,
+                                memory_key_padding_mask=memory_key_padding_mask,
+                                pos=pos,
+                                query_pos=query_pos,)
+        
+    def forward_pet(self, tgt, memory,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None,
+                tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None,
+                pos: Optional[Tensor] = None,
+                query_pos: Optional[Tensor] = None):
+        output = tgt
+        intermediate = []
         for idx, layer in enumerate(self.layers):    
             output = layer(output, # tgt
                            memory, 
@@ -555,7 +509,7 @@ class TransformerDecoder(nn.Module):
                         tgt_key_padding_mask=tgt_key_padding_mask,  # None
                         memory_key_padding_mask=memory_key_padding_mask,    # False
                         pos=pos, query_pos=query_pos)
-            
+
             if self.return_intermediate:
                 if self.norm is not None:
                     intermediate.append(self.norm(output))
@@ -573,6 +527,142 @@ class TransformerDecoder(nn.Module):
 
         return output.unsqueeze(0)
 
+    def forward_box(self, tgt, memory,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None,
+                tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None,
+                pos: Optional[Tensor] = None,
+                query_pos: Optional[Tensor] = None,
+                box_unsigmoid: Optional[Tensor] = None,
+                **kwargs):
+        output = tgt
+        intermediate = []
+        query_pos_2d = self.init_offset_generator(query_pos.reshape(-1, self.d_model))
+        nums, new_bs, dimen = box_unsigmoid.shape
+        query_pos_2d = query_pos_2d.reshape(nums, new_bs, dimen) 
+        query_pos_2d = (query_pos_2d.sigmoid() - 0.5) * 2.0
+        box = query_pos_2d
+        
+        # box = box_unsigmoid.sigmoid()   # box.shape = [ decw*dech, bs*nums, C=2]
+        boxes = [box]
+            
+        for layer_id, layer in enumerate(self.layers):
+            # get sine embedding for the query vector 
+            query_pos = self.ref_point_head(gen_sineembed_for_position(box))
+                                            # ...,2 -> ...,256
+            
+            # box agent
+            N, B, _ = box.shape
+            point_offset = self.point_offset(output).reshape(N, B, self.nhead, 2)
+            agent = box[..., :2].unsqueeze(-2).repeat(1, 1, self.nhead, 1) + point_offset
+                                    
+            #if +point offset directly:
+            # agent = box[..., :2].unsqueeze(2).repeat(1, 1, self.nhead, 1) + (box[..., 2:].unsqueeze(2).repeat(1, 1, self.nhead, 1) / 2) * point_offset
+            # agent = box[..., :2].unsqueeze(2).repeat(1, 1, self.nhead, 1) + (fixed_size / 2) * point_offset
+            
+            # no offset box
+            # agent = box[..., :2].unsqueeze(2).repeat(1, 1, self.nhead, 1)
+            
+            query_sine_embed = gen_sineembed_for_position(agent.flatten(1, 2)).reshape(N, B, self.nhead * self.d_model)
+            
+            if layer_id == 0:
+                pos_transformation = 1
+            else:
+                pos_transformation = self.query_scale(output).repeat(1, 1, self.nhead)
+
+            # apply transformation
+            query_sine_embed = query_sine_embed * pos_transformation
+            
+            output = layer(output, memory, tgt_mask=tgt_mask, # None 
+                    memory_mask=memory_mask,              # None
+                    tgt_key_padding_mask=tgt_key_padding_mask,  # None
+                    memory_key_padding_mask=memory_key_padding_mask,    # memory_key_padding_mask = mask_win = None
+                    pos=pos, query_pos=query_pos, 
+                    # box-detr:
+                    query_sine_embed=query_sine_embed,
+                    layer_id=layer_id)
+            
+            # iter update            
+            if self.bbox_embed is not None:
+                tmp = self.bbox_embed(output)
+                tmp += inverse_sigmoid(box)
+                new_box = tmp.sigmoid()
+                if layer_id != self.num_layers - 1:
+                    boxes.append(new_box)
+                box = new_box.detach()
+            
+            if self.return_intermediate:
+                if self.norm is not None:
+                    intermediate.append(self.norm(output))
+                else:
+                    intermediate.append(output)
+            
+        if self.norm is not None:
+            output = self.norm(output)
+            if self.return_intermediate:
+                intermediate.pop()
+                intermediate.append(output)
+
+        if self.return_intermediate:
+            if self.bbox_embed is not None:
+                return [
+                    torch.stack(intermediate),  #.transpose(1, 2),      # torch.Size([2, 8, 1024, 256])
+                    torch.stack(boxes)  #.transpose(1, 2),
+                ]
+            else: # return here
+                return [
+                    torch.stack(intermediate),  #.transpose(1, 2), 
+                    box.unsqueeze(0)  #.transpose(1, 2)
+                ]  
+                        
+        return output.unsqueeze(0)
+    
+    def forward_con(self, tgt, memory,
+                tgt_mask: Optional[Tensor] = None,
+                memory_mask: Optional[Tensor] = None,
+                tgt_key_padding_mask: Optional[Tensor] = None,
+                memory_key_padding_mask: Optional[Tensor] = None,
+                pos: Optional[Tensor] = None,
+                query_pos: Optional[Tensor] = None,
+                box_unsigmoid: Optional[Tensor] = None,
+                **kwargs):
+        output = tgt
+        intermediate = []
+        reference_points_before_sigmoid = self.ref_point_head(query_pos)
+        reference_points = reference_points_before_sigmoid.sigmoid().transpose(0, 1)
+        
+        for layer_id, layer in enumerate(self.layers):
+            obj_center = reference_points[..., :2].transpose(0, 1)
+            if layer_id == 0:
+                pos_transformation = 1
+            else:
+                pos_transformation = self.query_scale(output)
+                
+            query_sine_embed = gen_sineembed_for_position(obj_center, self.d_model)
+            query_sine_embed = query_sine_embed * pos_transformation
+            
+            output = layer(output, memory, tgt_mask=tgt_mask,
+                memory_mask=memory_mask,
+                tgt_key_padding_mask=tgt_key_padding_mask,
+                memory_key_padding_mask=memory_key_padding_mask,
+                pos=pos, query_pos=query_pos, query_sine_embed=query_sine_embed,
+                layer_id=layer_id)
+        
+            if self.return_intermediate:
+                intermediate.append(self.norm(output))
+                
+        if self.norm is not None:
+            output = self.norm(output)
+            if self.return_intermediate:
+                intermediate.pop()
+                intermediate.append(output)
+        
+        if self.return_intermediate:
+            return [torch.stack(intermediate), 
+                    reference_points.unsqueeze(0).permute(0, 2, 1, 3).repeat(2, 1, 1, 1)]
+        
+        return output.unsqueeze(0)
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
@@ -628,7 +718,7 @@ class EncoderLayer(nn.Module):
 
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
-                 activation="relu", attn_type="softmax", opt_query_decoder=False):
+                 activation="relu", attn_type="softmax", opt_query_decoder=False, opt_query_con=False):
         super().__init__()
         assert attn_type in ['softmax', 'chunk_linear', 'fused_chunk_linear', 'fused_recurrent_linear'], \
             print(f"attn_type should be in ['softmax', 'chunk_linear', 'fused_chunk_linear', 'fused_recurrent_linear'], but get: {attn_type}")
@@ -646,9 +736,12 @@ class DecoderLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.nhead = nhead
         self.d_model = d_model
-        self.opt_query_decoder = opt_query_decoder
         
-        if opt_query_decoder:   # box-detr-decoder
+        self.opt_query_decoder = opt_query_decoder
+        self.opt_query_con = opt_query_con
+        self.normalize_before = False
+        
+        if opt_query_decoder or opt_query_con:   # box-detr-decoder
             # Decoder Self-Attention
             self.sa_qcontent_proj = nn.Linear(d_model, d_model)
             self.sa_qpos_proj = nn.Linear(d_model, d_model)
@@ -663,11 +756,20 @@ class DecoderLayer(nn.Module):
             self.ca_kcontent_proj = nn.Linear(d_model, d_model)
             self.ca_kpos_proj = nn.Linear(d_model, d_model)
             self.ca_v_proj = nn.Linear(d_model, d_model)
-            self.ca_qpos_sine_proj = nn.Conv1d(d_model * nhead, d_model, kernel_size=1, groups=nhead)
             self.cross_attn = MultiheadAttention(d_model * 2, nhead, dropout=dropout, vdim=d_model)
             
-            self.normalize_before = False
-            
+            if opt_query_decoder:
+                self.ca_qpos_sine_proj = nn.Conv1d(d_model * nhead, d_model, kernel_size=1, groups=nhead)
+                
+            if opt_query_con:
+                self.ca_qpos_sine_proj = nn.Linear(d_model, d_model)
+                
+                # Implementation of Feedforward model
+                self.dropout = nn.Dropout(dropout)
+                self.dropout1 = nn.Dropout(dropout)
+                self.dropout2 = nn.Dropout(dropout)
+                self.dropout3 = nn.Dropout(dropout)
+
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
@@ -685,73 +787,44 @@ class DecoderLayer(nn.Module):
                      ):
         
         if self.opt_query_decoder:
-            # box-detr decoder
-            # ========== Begin of Self-Attention =============
-            # Apply projections here
-            # shape: num_queries x batch_size x 256
-            q_content = self.sa_qcontent_proj(tgt)  # tgt is the input of the first decoder layer. zero by default.
-            q_pos = self.sa_qpos_proj(query_pos)
-            k_content = self.sa_kcontent_proj(tgt)
-            k_pos = self.sa_kpos_proj(query_pos)
-            v = self.sa_v_proj(tgt)
-            # proj before pos_embed
-            q = q_content + q_pos
-            k = k_content + k_pos
-            tgt2 = self.self_attn(q, k, value=v, attn_mask=tgt_mask,
-                                  key_padding_mask=tgt_key_padding_mask)[0]
-            # ========== End of Self-Attention =============
-            
-            tgt = tgt + tgt2
-            tgt = self.norm1(tgt)
-            
-            # ========== Begin of Cross-Attention =============
-            # Apply projections here
-            # shape: num_queries x batch_size x 256
-            q_content = self.ca_qcontent_proj(tgt)
-            k_content = self.ca_kcontent_proj(memory)
-            v = self.ca_v_proj(memory)
-            
-            num_queries, bs, n_model = q_content.shape
-            
-            hw, _, _ = k_content.shape  # win_h*win_w, bs*8, C
-            k_pos = self.ca_kpos_proj(pos)
-            
-            # in PET: hw, num_mul_bs, d_model = q_content.shape
-
-            # For the first decoder layer, we concatenate the positional embedding predicted from 
-            # the object query (the positional embedding) into the original query (key) in DETR.
-            
-            if layer_id == 0:
-                q_pos = self.ca_qpos_proj(query_pos)
-                q = q_content + q_pos
-                k = k_content + k_pos
-            else:
-                q = q_content
-                k = k_content
-                
-            q = q.view(num_queries, bs, self.nhead, n_model//self.nhead)
-            query_sine_embed = self.ca_qpos_sine_proj(query_sine_embed.transpose(-1, -2)).transpose(-1, -2)
-            query_sine_embed = query_sine_embed.view(num_queries, bs, self.nhead, n_model//self.nhead)
-            q = torch.cat([q, query_sine_embed], dim=3).view(num_queries, bs, n_model * 2)
-            
-            k = k.view(hw, bs, self.nhead, n_model//self.nhead)
-            k_pos = k_pos.view(hw, bs, self.nhead, n_model//self.nhead)
-            k = torch.cat([k, k_pos], dim=3).view(hw, bs, n_model * 2)
-            
-            tgt2 = self.cross_attn(query=q,
-                               key=k,
-                               value=v, attn_mask=memory_mask,
-                               key_padding_mask=memory_key_padding_mask)[0]
-            # ========== End of Cross-Attention =============
-            
-            tgt = tgt + tgt2
-            tgt = self.norm2(tgt)
-            tgt2 = self.linear2(self.activation(self.linear1(tgt)))
-            tgt = tgt + tgt2
-            tgt = self.norm3(tgt)
-            
-            return tgt
+            return self.forward_box(tgt, memory, 
+                        tgt_mask=tgt_mask, # None 
+                        memory_mask=memory_mask,              # None
+                        tgt_key_padding_mask=tgt_key_padding_mask,  # None
+                        memory_key_padding_mask=memory_key_padding_mask,    # memory_key_padding_mask = mask_win = None
+                        pos=pos, 
+                        query_pos=query_pos, 
+                        # box-detr:
+                        query_sine_embed=query_sine_embed,
+                        layer_id=layer_id)
         
+        
+        if self.opt_query_con:
+            return self.forward_con(tgt, memory, 
+                        tgt_mask=tgt_mask, # None 
+                        memory_mask=memory_mask,              # None
+                        tgt_key_padding_mask=tgt_key_padding_mask,  # None
+                        memory_key_padding_mask=memory_key_padding_mask,    # memory_key_padding_mask = mask_win = None
+                        pos=pos, 
+                        query_pos=query_pos, 
+                        query_sine_embed=query_sine_embed,
+                        layer_id=layer_id)
+            
+        return self.forward_pet(tgt, # tgt
+                           memory, 
+                           tgt_mask=tgt_mask, # None 
+                        memory_mask=memory_mask,              # None
+                        tgt_key_padding_mask=tgt_key_padding_mask,  # None
+                        memory_key_padding_mask=memory_key_padding_mask,    # False
+                        pos=pos, query_pos=query_pos)
+
+    def forward_pet(self, tgt, memory,
+                     tgt_mask: Optional[Tensor] = None,
+                     memory_mask: Optional[Tensor] = None,
+                     tgt_key_padding_mask: Optional[Tensor] = None,
+                     memory_key_padding_mask: Optional[Tensor] = None,
+                     pos: Optional[Tensor] = None,
+                     query_pos: Optional[Tensor] = None,):
         # orginal PET (detr) decoder 
         # decoder self attention
         q = k = self.with_pos_embed(tgt, query_pos) # tgt position encoding
@@ -777,6 +850,159 @@ class DecoderLayer(nn.Module):
         tgt = self.norm3(tgt)
         return tgt
 
+    def forward_box(self, tgt, memory,
+                     tgt_mask: Optional[Tensor] = None,
+                     memory_mask: Optional[Tensor] = None,
+                     tgt_key_padding_mask: Optional[Tensor] = None,
+                     memory_key_padding_mask: Optional[Tensor] = None,
+                     pos: Optional[Tensor] = None,
+                     query_pos: Optional[Tensor] = None,
+                     # box-detr query:
+                     query_sine_embed = None,
+                     layer_id = 0,
+                     ):
+        # box-detr decoder
+        # ========== Begin of Self-Attention =============
+        # Apply projections here
+        # shape: num_queries x batch_size x 256
+        q_content = self.sa_qcontent_proj(tgt)  # tgt is the input of the first decoder layer. zero by default.
+        q_pos = self.sa_qpos_proj(query_pos)
+        k_content = self.sa_kcontent_proj(tgt)
+        k_pos = self.sa_kpos_proj(query_pos)
+        v = self.sa_v_proj(tgt)
+        # proj before pos_embed
+        q = q_content + q_pos
+        k = k_content + k_pos
+        tgt2 = self.self_attn(q, k, value=v, attn_mask=tgt_mask,
+                                key_padding_mask=tgt_key_padding_mask)[0]
+        # ========== End of Self-Attention =============
+        
+        tgt = tgt + tgt2
+        tgt = self.norm1(tgt)
+        
+        # ========== Begin of Cross-Attention =============
+        # Apply projections here
+        # shape: num_queries x batch_size x 256
+        q_content = self.ca_qcontent_proj(tgt)
+        k_content = self.ca_kcontent_proj(memory)
+        v = self.ca_v_proj(memory)
+        
+        num_queries, bs, n_model = q_content.shape
+        
+        hw, _, _ = k_content.shape  # win_h*win_w, bs*8, C
+        k_pos = self.ca_kpos_proj(pos)
+        
+        # in PET: hw, num_mul_bs, d_model = q_content.shape
+
+        # For the first decoder layer, we concatenate the positional embedding predicted from 
+        # the object query (the positional embedding) into the original query (key) in DETR.
+        
+        if layer_id == 0:
+            q_pos = self.ca_qpos_proj(query_pos)
+            q = q_content + q_pos
+            k = k_content + k_pos
+        else:
+            q = q_content
+            k = k_content
+            
+        q = q.view(num_queries, bs, self.nhead, n_model//self.nhead)
+        query_sine_embed = self.ca_qpos_sine_proj(query_sine_embed.transpose(-1, -2)).transpose(-1, -2)
+        query_sine_embed = query_sine_embed.view(num_queries, bs, self.nhead, n_model//self.nhead)
+        q = torch.cat([q, query_sine_embed], dim=3).view(num_queries, bs, n_model * 2)
+        
+        k = k.view(hw, bs, self.nhead, n_model//self.nhead)
+        k_pos = k_pos.view(hw, bs, self.nhead, n_model//self.nhead)
+        k = torch.cat([k, k_pos], dim=3).view(hw, bs, n_model * 2)
+        
+        tgt2 = self.cross_attn(query=q,
+                            key=k,
+                            value=v, attn_mask=memory_mask,
+                            key_padding_mask=memory_key_padding_mask)[0]
+        # ========== End of Cross-Attention =============
+        
+        tgt = tgt + tgt2
+        tgt = self.norm2(tgt)
+        tgt2 = self.linear2(self.activation(self.linear1(tgt)))
+        tgt = tgt + tgt2
+        tgt = self.norm3(tgt)
+        
+        return tgt
+    
+    def forward_con(self, tgt, memory,
+                     tgt_mask: Optional[Tensor] = None,
+                     memory_mask: Optional[Tensor] = None,
+                     tgt_key_padding_mask: Optional[Tensor] = None,
+                     memory_key_padding_mask: Optional[Tensor] = None,
+                     pos: Optional[Tensor] = None,
+                     query_pos: Optional[Tensor] = None,
+                     # box-detr query:
+                     query_sine_embed = None,
+                     layer_id = 0,
+                     ):
+        # ========== Begin of Self-Attention =============
+        # Apply projections here
+        # shape: num_queries x batch_size x 256
+        q_content = self.sa_qcontent_proj(tgt)      # target is the input of the first decoder layer. zero by default.
+        q_pos = self.sa_qpos_proj(query_pos)
+        k_content = self.sa_kcontent_proj(tgt)
+        k_pos = self.sa_kpos_proj(query_pos)
+        v = self.sa_v_proj(tgt)
+
+        num_queries, bs, n_model = q_content.shape
+        hw, _, _ = k_content.shape
+
+        q = q_content + q_pos
+        k = k_content + k_pos
+
+        tgt2 = self.self_attn(q, k, value=v, attn_mask=tgt_mask,
+                            key_padding_mask=tgt_key_padding_mask)[0]
+        # ========== End of Self-Attention =============
+
+        tgt = tgt + self.dropout1(tgt2)
+        tgt = self.norm1(tgt)
+
+        # ========== Begin of Cross-Attention =============
+        # Apply projections here
+        # shape: num_queries x batch_size x 256
+        q_content = self.ca_qcontent_proj(tgt)
+        k_content = self.ca_kcontent_proj(memory)
+        v = self.ca_v_proj(memory)
+
+        num_queries, bs, n_model = q_content.shape
+        hw, _, _ = k_content.shape
+
+        k_pos = self.ca_kpos_proj(pos)
+
+        # For the first decoder layer, we concatenate the positional embedding predicted from 
+        # the object query (the positional embedding) into the original query (key) in DETR.
+        if layer_id == 0:
+            q_pos = self.ca_qpos_proj(query_pos)
+            q = q_content + q_pos
+            k = k_content + k_pos
+        else:
+            q = q_content
+            k = k_content
+
+        q = q.view(num_queries, bs, self.nhead, n_model//self.nhead)
+        query_sine_embed = self.ca_qpos_sine_proj(query_sine_embed)
+        query_sine_embed = query_sine_embed.view(num_queries, bs, self.nhead, n_model//self.nhead)
+        q = torch.cat([q, query_sine_embed], dim=3).view(num_queries, bs, n_model * 2)
+        k = k.view(hw, bs, self.nhead, n_model//self.nhead)
+        k_pos = k_pos.view(hw, bs, self.nhead, n_model//self.nhead)
+        k = torch.cat([k, k_pos], dim=3).view(hw, bs, n_model * 2)
+
+        tgt2 = self.cross_attn(query=q,
+                                key=k,
+                                value=v, attn_mask=memory_mask,
+                                key_padding_mask=memory_key_padding_mask)[0]               
+        # ========== End of Cross-Attention =============
+
+        tgt = tgt + self.dropout2(tgt2)
+        tgt = self.norm2(tgt)
+        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+        tgt = tgt + self.dropout3(tgt2)
+        tgt = self.norm3(tgt)
+        return tgt
 
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
@@ -804,6 +1030,7 @@ def build_decoder(args, **kwargs):
         return_intermediate_dec=True,          
         attn_type=args.attn_type if hasattr(args, 'attn_type') else 'softmax',  # softmax
         opt_query_decoder=args.opt_query_decoder if hasattr(args, 'opt_query_decoder') else False,
+        opt_query_con=args.opt_query_con if hasattr(args, 'opt_query_con') else False,
         # **kwargs  
     )
 
