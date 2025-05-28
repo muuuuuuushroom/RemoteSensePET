@@ -315,7 +315,6 @@ class WinDecoderTransformer(nn.Module):
                                         memory_win, pos_embed_win, mask_win, self.dec_win_h, self.dec_win_w, src.shape, **kwargs)
                 return hs.transpose(1, 2)
             
-        
 class TransformerEncoder(nn.Module):
     """
     Base Transformer Encoder
@@ -769,7 +768,6 @@ class DecoderLayer(nn.Module):
                 self.dropout1 = nn.Dropout(dropout)
                 self.dropout2 = nn.Dropout(dropout)
                 self.dropout3 = nn.Dropout(dropout)
-
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos

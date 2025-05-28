@@ -331,11 +331,13 @@ class BasePETCount(nn.Module):
         points_queries = points_queries.float().cuda()
         
         if self.opt_query: # set2
-            refer = kwargs['refer']
+            refer = kwargs['refer'][-1]
             refer_bsig = inverse_sigmoid(refer)
-            tmp = self.bbox_embed(hs)
-            tmp += refer_bsig
-            outputs_offsets = tmp.sigmoid()
+            points_queries = refer_bsig + points_queries
+            outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
+            # tmp = self.bbox_embed(hs)
+            # tmp += refer_bsig
+            # outputs_offsets = tmp.sigmoid()
             # points_queries[..., 0] /= img_h
             # points_queries[..., 1] /= img_w            
             # points_queries = outputs_coord + points_queries
