@@ -129,5 +129,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = load_config(args.cfg)
     args = update_args_with_config(args, config)
-
+    
+    args.opt_query_con = False if not hasattr(args, 'opt_query_con') else args.opt_query_con
+    
     main(args)

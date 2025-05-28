@@ -132,10 +132,10 @@ class BasePETCount(nn.Module):
             self.norm_dec = [size / self.patch_size for size in self.dec_win_size]
             self.refloc_embed = nn.Embedding(dec_w*dec_h, 2) 
             
-            self.bbox_embed = MLP(hidden_dim, hidden_dim, 2, 3)
-            self.transformer.decoder.bbox_embed = self.bbox_embed
-            nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
-            nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
+            # self.bbox_embed = MLP(hidden_dim, hidden_dim, 2, 3)
+            # self.transformer.decoder.bbox_embed = self.bbox_embed
+            # nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
+            # nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
         
         if args.opt_query_con:
             self.bbox_embed = MLP(hidden_dim, hidden_dim, 2, 3)

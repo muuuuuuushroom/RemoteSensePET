@@ -435,7 +435,7 @@ class TransformerDecoder(nn.Module):
             self.point_offset = MLP(d_model, d_model, 2 * nhead, 2) # 4d
             self.ref_point_head = MLP(d_model, d_model, d_model, 2)  # 2*dm init
             
-            self.bbox_embed = None # waiting for input
+            self.bbox_embed = MLP(d_model, d_model, 2, 3) # None # waiting for input
             # below in new box embed
             # self.bbox_embed = MLP(d_model, d_model, 2, 3)
             
