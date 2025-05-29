@@ -36,7 +36,9 @@ class SHA(Dataset):
     ):
         self.root_path = data_root
 
-        prefix = "train_data" if train else "test_data"
+        self.test_on_train = True
+
+        prefix = "train_data" if train or self.test_on_train else "test_data"
         # prefix = "train_data"
         self.prefix = prefix
 
