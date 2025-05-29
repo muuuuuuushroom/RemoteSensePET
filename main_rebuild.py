@@ -19,12 +19,11 @@ from datasets import build_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
 from util.custom_log import *
-from util.data_aug_zlt import create_hard_case_sampler_train
 
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
-    parser.add_argument('--cfg', type=str, default='configs_con/test.yaml', 
+    parser.add_argument('--cfg', type=str, default='configs_con/baseline.yaml', 
                         help='base cfg file for training model')
     
     parser.add_argument('--save_ckpt_freq', type=int, default=500,
@@ -39,27 +38,22 @@ def get_args_parser():
     parser.add_argument('--eval_pad', default='padding_center')
     parser.add_argument('--eval_robust', default=[])
     parser.add_argument('--robust_para', default=None)
-    
-    # parser.add_argument('--prob_map_lc', default=None)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
-    # pet decoder
-    # parser.add_argument('--opt_query_decoder', default=True, type=bool, help='reference: box-detr')
     return parser
 
 
 def main(args):
     utils.init_distributed_mode(args)
     print(args)
-    print('batch_size = ', args.batch_size)
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
-    seed = args.seed + utils.get_rank()
+    seed = args.seed + utils.get_rank() # rank: distributed training
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -69,14 +63,13 @@ def main(args):
     model.to(device)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'n_parameters: {n_parameters}')
-    if args.syn_bn:
+    if args.syn_bn: # distributed training
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     model_without_ddp = model
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
-    # model = torch.compile(model)
     
     # build optimizer
     param_dicts = [
@@ -163,7 +156,6 @@ def main(args):
         lr_scheduler.step()
 
         # save checkpoint
-        # save_list = [50, 100, 150, 250, 350, 400, 450, 500] # if args.opt_query_decoder else []   # box-detr comparision
         if (epoch+1) % args.save_ckpt_freq == 0:     #or (epoch+1) in save_list:
             checkpoint_paths = [output_dir / f'epoch_{epoch+1}.pth']
             for checkpoint_path in checkpoint_paths:

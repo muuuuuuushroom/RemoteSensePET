@@ -64,7 +64,7 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
         for i, t in enumerate(gts[idx]):
             # print('gt',(int(t[1]), int(t[0])))
             sample_vis = cv2.circle(
-                sample_vis, (int(t[1]), int(t[0])), size + 2, (0, 0, 255), -1
+                sample_vis, (int(t[1]), int(t[0])), size + 1, (0, 0, 255), -1
             )
             # cv2.putText(sample_vis, str(i+1), (int(t[1]+3), int(t[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
