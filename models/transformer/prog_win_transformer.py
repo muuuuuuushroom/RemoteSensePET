@@ -659,7 +659,7 @@ class TransformerDecoder(nn.Module):
         
         if self.return_intermediate:
             return [torch.stack(intermediate), 
-                    reference_points.unsqueeze(0).permute(0, 2, 1, 3).repeat(2, 1, 1, 1)]
+                    reference_points.unsqueeze(0).permute(0, 2, 1, 3).repeat(self.num_layers, 1, 1, 1)]
         
         return output.unsqueeze(0)
 

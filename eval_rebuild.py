@@ -21,13 +21,13 @@ from util.custom_log import *
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
     
-    parser.add_argument('--cfg', default='/data/zlt/PET/RTC/outputs_con/Ship/base_box_detr/config.yaml')
+    parser.add_argument('--cfg', default='/data/zlt/RemoteSensePET/outputs/Ship/t_noencoder_attn_opre_bs16_withen_box1_layer6/config.yaml')
     parser.add_argument('--gt_determined', default='100', help='test')
     # misc parameters
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
-    parser.add_argument('--resume', default='/data/zlt/PET/RTC/outputs_con/Ship/base_box_detr/best_checkpoint.pth', help='resume from checkpoint')
-    parser.add_argument('--vis_dir', default=None)
+    parser.add_argument('--resume', default='/data/zlt/RemoteSensePET/outputs/Ship/t_noencoder_attn_opre_bs16_withen_box1_layer6/best_checkpoint.pth', help='resume from checkpoint')
+    parser.add_argument('--vis_dir', default='/data/zlt/RemoteSensePET/outputs/Ship/t_noencoder_attn_opre_bs16_withen_box1_layer6/vis')
     parser.add_argument('--eval_pad', default='padding_center')
     parser.add_argument('--eval_robust', default=[])
     parser.add_argument('--robust_para', default=None)

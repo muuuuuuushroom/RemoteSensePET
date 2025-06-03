@@ -318,9 +318,6 @@ class BasePETCount(nn.Module):
         return out
     
     def predict(self, samples, points_queries, hs, **kwargs):
-        """
-        Crowd prediction
-        """
         # PET: hs[2, 8192, 256]
         outputs_class = self.class_embed(hs)
         # outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
@@ -329,17 +326,18 @@ class BasePETCount(nn.Module):
         img_shape = samples.tensors.shape[-2:]
         img_h, img_w = img_shape
         points_queries = points_queries.float().cuda()
+        pq_or = points_queries
         
-        if self.opt_query: # set2
-            refer = kwargs['refer'][-1]
+        if self.opt_query:
+            refer = kwargs['refer']
             refer_bsig = inverse_sigmoid(refer)
-            points_queries = refer_bsig + points_queries
+            points_queries = refer_bsig[-1] + points_queries
             outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
             # tmp = self.bbox_embed(hs)
             # tmp += refer_bsig
             # outputs_offsets = tmp.sigmoid()
             points_queries[..., 0] /= img_h
-            points_queries[..., 1] /= img_w            
+            points_queries[..., 1] /= img_w
             # points_queries = outputs_coord + points_queries
         elif self.opt_query_con:
             refer = kwargs['refer'][-1]
@@ -348,7 +346,7 @@ class BasePETCount(nn.Module):
             for lvl in range(hs.shape[0]):
                 tmp = self.bbox_embed(hs[lvl])
                 tmp[..., :2] += reference_before_sigmoid
-                outputs_coord = tmp.sigmoid()
+                outputs_coord = (tmp.sigmoid()- 0.5) * 2.0 # con1 only: tmp.sigmoid()
                 outputs_coords.append(outputs_coord)
             outputs_offsets = torch.stack(outputs_coords)
             points_queries[:, 0] /= img_h
@@ -373,7 +371,13 @@ class BasePETCount(nn.Module):
         
         if self.opt_query:
             out['reference'] = kwargs['refer']
-    
+            rb_first_dim = refer_bsig.shape[0]
+            pq_ex = pq_or.unsqueeze(0).expand(rb_first_dim, -1, -1)
+            pq_ex = pq_ex + refer_bsig
+            pq_ex[..., 0] /= img_h
+            pq_ex[..., 1] /= img_w  
+            out['pq_ex'] = pq_ex
+            
         out['points_queries'] = points_queries
         out['pq_stride'] = self.pq_stride
         return out
@@ -640,6 +644,7 @@ class PET(nn.Module):
         return losses
     
     def test_forward(self, samples, features, pos, **kwargs):
+        # print(samples.tensors.shape)
         outputs = self.pet_forward(samples, features, pos, **kwargs)
         
         if 'eval_s' in kwargs: # rsc test for precision
@@ -668,13 +673,23 @@ class PET(nn.Module):
         div_out = dict()
         output_names = out_sparse.keys() if out_sparse is not None else out_dense.keys()
         for name in list(output_names): 
-            if 'pred' in name or name == 'points_queries':
+            if 'pred' in name or name == 'points_queries': #or name == 'pq_ex':
                 if index_dense is None:
                     div_out[name] = out_sparse[name][index_sparse].unsqueeze(0)
                 elif index_sparse is None:
                     div_out[name] = out_dense[name][index_dense].unsqueeze(0)
                 else:
                     div_out[name] = torch.cat([out_sparse[name][index_sparse].unsqueeze(0), out_dense[name][index_dense].unsqueeze(0)], dim=1)
+            elif name == 'pq_ex':
+                if index_dense is None:
+                    div_out[name] = out_sparse[name][:, index_sparse]
+                elif index_sparse is None:
+                    div_out[name] = out_dense[name][:, index_dense]
+                else:
+                    div_out[name] = torch.cat([
+                        out_sparse[name][:, index_sparse],
+                        out_dense[name][:, index_dense]
+                    ], dim=1)
             else:
                 div_out[name] = out_sparse[name] if out_sparse is not None else out_dense[name]
         div_out['split_map_raw'] = outputs['split_map_raw']

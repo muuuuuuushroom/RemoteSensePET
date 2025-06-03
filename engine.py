@@ -29,14 +29,22 @@ class DeNormalize(object):
         return tensor
 
 
-def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=None, args=None):
+def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=None, args=None, outputs=None):
     """                         # pred point & query
     Visualize predictions
     """
+    box_flag = False
+    
     vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
     vis_dir_nac = os.path.join(vis_dir, 'gt_nac')
     os.makedirs(vis_dir_ac, exist_ok=True)
     os.makedirs(vis_dir_nac, exist_ok=True)
+    
+    if box_flag:
+        vis_dir_box_same = os.path.join(vis_dir, 'box_same')
+        os.makedirs(vis_dir_box_same, exist_ok=True)
+        vis_dir_box_nosame = os.path.join(vis_dir, 'box_nosame')
+        os.makedirs(vis_dir_box_nosame, exist_ok=True)
     
     gts = [t["points"].tolist() for t in targets]                   # gt point         
     
@@ -55,47 +63,110 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
         sample = restore_transform(images[idx])
         sample = pil_to_tensor(sample.convert("RGB")).numpy() * 255
         sample_vis = sample.transpose([1, 2, 0])[:, :, ::-1].astype(np.uint8).copy()
-
+        or_sample = sample_vis
         h, w = sample_vis.shape[:2]
         # sample_vis = cv2.resize(sample_vis, (512, 512))
         
-        # draw ground-truth points (red)
-        size = 3
-        for i, t in enumerate(gts[idx]):
-            # print('gt',(int(t[1]), int(t[0])))
-            sample_vis = cv2.circle(
-                sample_vis, (int(t[1]), int(t[0])), size + 1, (0, 0, 255), -1
-            )
-            # cv2.putText(sample_vis, str(i+1), (int(t[1]+3), int(t[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-        # draw predictions (green)
-        for i, p in enumerate(pred[idx]):
-            # print('pred',(int(p[1]), int(p[0])))
-            sample_vis = cv2.circle(
-                sample_vis, (int(p[1]), int(p[0])), size, (0, 255, 0), -1
+        if not box_flag:
+            # draw ground-truth points (red)
+            size = 3
+            for i, t in enumerate(gts[idx]):
+                # print('gt',(int(t[1]), int(t[0])))
+                sample_vis = cv2.circle(
+                    sample_vis, (int(t[1]), int(t[0])), size + 1, (0, 0, 255), -1
                 )
-            # cv2.putText(sample_vis, str(i+1), (int(p[1]+3), int(p[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                # cv2.putText(sample_vis, str(i+1), (int(t[1]+3), int(t[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        # draw point-query
-        for i, q in enumerate(queries[idx]):
+            # draw predictions (green)
+            for i, p in enumerate(pred[idx]):
+                # print('pred',(int(p[1]), int(p[0])))
+                sample_vis = cv2.circle(
+                    sample_vis, (int(p[1]), int(p[0])), size, (0, 255, 0), -1
+                    )
+                # cv2.putText(sample_vis, str(i+1), (int(p[1]+3), int(p[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            # draw point-query
+            for i, q in enumerate(queries[idx]):
+                
+                if args.predict == 'origin':
+                    q[1] *= w
+                    q[0] *= h
+                
+                sample_vis = cv2.circle(
+                    sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
+                    )
+                
+                # draw line between query and pred
+                q_x, q_y = int(q[1]), int(q[0])
+                p_x, p_y = int(pred[idx][i][1]), int(pred[idx][i][0])
+                overlay = sample_vis.copy()
+                cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
+                alpha = 0.5  
+                sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
+                # cv2.putText(sample_vis, str(i+1), (int(q[1]*w-3), int(q[0]*h)-3), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+        if box_flag:
+            pq_ex = outputs['pq_ex']
+            sample_vis_box = or_sample
+            batch_size, num_points, _ = pq_ex.shape
             
-            if args.predict == 'origin':
-                q[1] *= w
-                q[0] *= h
+            fixed_colors = [
+                (0, 0, 255),      # 红
+                (0, 128, 255),    # 橙
+                (0, 255, 255),    # 黄
+                (0, 255, 0),      # 绿
+                (255, 255, 0),    # 青
+                (255, 0, 0),      # 蓝
+                (255, 0, 255),    # 紫
+            ]
             
-            sample_vis = cv2.circle(
-                sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
+            for i, p in enumerate(pred[idx]):
+                # print('pred',(int(p[1]), int(p[0])))
+                sample_vis_box = cv2.circle(
+                    sample_vis_box, (int(p[1]), int(p[0])), 3, (255, 0, 255), -1
+                    )
+            
+            for i in range(num_points):  # 遍历每个点序号
+                # prev_point = None
+                for b in range(batch_size):  # 每个 batch 的该点
+                    q = pq_ex[b][i].clone()
+                    q[1] *= w
+                    q[0] *= h
+                    q_x, q_y = int(q[1]), int(q[0])
+
+                    # 固定颜色（支持最多 7 个 batch）
+                    color = fixed_colors[b % len(fixed_colors)]
+                    sample_vis_box = cv2.circle(sample_vis_box, (q_x, q_y), 3, color, -1)
+
+                    # 连线：黄色半透明
+                    # if prev_point is not None:
+                    #     overlay = sample_vis_box.copy()
+                    #     cv2.line(overlay, prev_point, (q_x, q_y), (0, 255, 255), 2)
+                    #     sample_vis_box = cv2.addWeighted(overlay, 0.5, sample_vis_box, 0.5, 0)
+
+                    # prev_point = (q_x, q_y)
+        
+            name = targets[idx]["image_path"].split("/")[-1].split(".")[0]
+            start_points = pq_ex[0]      # shape: [num_points, 2]
+            end_points   = pq_ex[-1]
+            offsets = end_points - start_points
+            if offsets.shape[0] != 0:
+                ref_offset = offsets[0]
+                is_equal = torch.all(offsets == ref_offset, dim=1) 
+                same_ratio = is_equal.float().mean().item()
+                save_path = os.path.join(
+                        vis_dir_box_same,
+                        "{}_gt{}_pred{}.jpg".format(name, len(gts[idx]), len(pred[idx])),
+                    ) if same_ratio >= 0.9 else os.path.join(
+                        vis_dir_box_nosame,
+                        "{}_gt{}_pred{}.jpg".format(name, len(gts[idx]), len(pred[idx])),
+                    )
+                cv2.imwrite(
+                    save_path,
+                    sample_vis_box,
                 )
-            
-            # draw line between query and pred
-            q_x, q_y = int(q[1]), int(q[0])
-            p_x, p_y = int(pred[idx][i][1]), int(pred[idx][i][0])
-            overlay = sample_vis.copy()
-            cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
-            alpha = 0.5  
-            sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
-            # cv2.putText(sample_vis, str(i+1), (int(q[1]*w-3), int(q[0]*h)-3), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-
+            continue
+                
         # draw split map
         if split_map is not None:
             imgH, imgW = sample_vis.shape[:2]
@@ -367,7 +438,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
             )
             
             visualization(
-                samples, targets, [points], outputs_queries, vis_dir, split_map=split_map, gt_cnt=gt_cnt, args=args
+                samples, targets, [points], outputs_queries, vis_dir, split_map=split_map, gt_cnt=gt_cnt, args=args, outputs=outputs
             )
 
     # gather the stats from all processes

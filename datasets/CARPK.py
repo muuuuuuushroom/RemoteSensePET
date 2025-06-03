@@ -36,7 +36,7 @@ class SHA(Dataset):
     ):
         self.root_path = data_root
 
-        self.test_on_train = True
+        self.test_on_train = False
 
         prefix = "train_data" if train or self.test_on_train else "test_data"
         # prefix = "train_data"
@@ -395,10 +395,11 @@ def random_crop(img, points, bboxs, patch_size=256, probability=None):
 
 def get_patch_size(img_h, img_w):
     '''
-        return min 128 common multiple
+        return min common multiple
     '''
-    patch_h = math.ceil(img_h / 128) * 128
-    patch_w = math.ceil(img_w / 128) * 128
+    common=256  # 128 if noencoder
+    patch_h = math.ceil(img_h / common) * common
+    patch_w = math.ceil(img_w / common) * common
 
     return patch_h, patch_w
 

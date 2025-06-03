@@ -11,6 +11,8 @@ __pycache__/
 *.py[cod]
 .vscode
 *.sh
+*.pdf
+*.xlsx
 
 log_vis.ipynb
 paint_r2.py
