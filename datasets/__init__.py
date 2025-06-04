@@ -9,7 +9,8 @@ from .CORN import build as build_corn
 from .SOY import build_soy
 
 data_path = {
-    'SHA': './data/ShanghaiTech/part_A/',
+    'SHA': 'data/Crowd_Counting/ShanghaiTech/part_A_final/',
+    'SHB': 'data/Crowd_Counting/ShanghaiTech/part_B_final/',
     'RTC': '/data/zlt/PET/RTC/data/RTC',
     
     'People': 'data/People',
@@ -23,7 +24,7 @@ data_path = {
 
 def build_dataset(image_set, args):
     args.data_path = data_path[args.dataset_file]
-    if args.dataset_file == 'SHA':
+    if args.dataset_file in ['SHA', 'SHB']:
         return build_sha(image_set, args)
     elif args.dataset_file == 'RTC':
         return build_rtc(image_set, args)

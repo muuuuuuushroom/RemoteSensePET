@@ -9,6 +9,7 @@ import glob
 import scipy.io as io
 import torchvision.transforms as standard_transforms
 import warnings
+import math
 warnings.filterwarnings('ignore')
 
 class SHA(Dataset):
@@ -17,14 +18,13 @@ class SHA(Dataset):
         
         prefix = "train_data" if train else "test_data"
         self.prefix = prefix
-        # self.img_list = os.listdir(f"{data_root}/{prefix}/images")
-        self.img_list = os.listdir(f"{data_root}/{prefix}/augmented")
+        self.img_list = os.listdir(f"{data_root}/{prefix}/images")
 
         # get image and ground-truth list
         self.gt_list = {}
         for img_name in self.img_list:
             img_path = f"{data_root}/{prefix}/images/{img_name}"  
-            gt_path = f"{data_root}/{prefix}/ground-truth/GT_{img_name}"
+            gt_path = f"{data_root}/{prefix}/ground_truth/GT_{img_name}"
             self.gt_list[img_path] = gt_path.replace("jpg", "mat")
         self.img_list = sorted(list(self.gt_list.keys()))
         self.nSamples = len(self.img_list)
@@ -78,6 +78,8 @@ class SHA(Dataset):
         # random crop patch
         if self.train:
             img, points = random_crop(img, points, patch_size=self.patch_size)
+        else:
+            img, points = resize_with_padding_center(img, points)
 
         # random flip
         if random.random() > 0.5 and self.train and self.flip:
@@ -96,7 +98,7 @@ class SHA(Dataset):
         if not self.train:
             target['image_path'] = img_path
 
-        return img, target
+        return img, target, None
 
 
 def load_data(img_gt_path, train):
@@ -132,6 +134,44 @@ def random_crop(img, points, patch_size=256):
     result_points[:, 1] *= fW
     return result_img, result_points
 
+def get_patch_size(img_h, img_w):
+    '''
+        return min common multiple
+    '''
+    common=256  # 128 if noencoder else 256
+    patch_h = math.ceil(img_h / common) * common
+    patch_w = math.ceil(img_w / common) * common
+
+    return patch_h, patch_w
+
+def resize_with_padding_center(img, points):
+    
+    imgH, imgW = img.shape[-2:]
+    patch_h, patch_w = get_patch_size(imgH, imgW)
+
+    pad_h_total = patch_h - imgH
+    pad_w_total = patch_w - imgW
+
+    pad_top = pad_h_total // 2
+    pad_bottom = pad_h_total - pad_top
+    pad_left = pad_w_total // 2
+    pad_right = pad_w_total - pad_left
+
+    padding = (pad_left, pad_right, pad_top, pad_bottom)
+    pad_value = 255
+    # if img.max() > 1.5: 
+    #     pad_value = 255
+    # else:     
+    #     pad_value = 1.0
+
+    result_img = torch.nn.functional.pad(img, padding, value=pad_value)
+    result_points = points.copy()
+
+    if points is not None and len(points) > 0:
+        result_points[:, 0] += pad_top    # y
+        result_points[:, 1] += pad_left   # x
+        
+    return result_img, result_points
 
 def build(image_set, args):
     transform = standard_transforms.Compose([

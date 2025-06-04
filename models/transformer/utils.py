@@ -27,8 +27,9 @@ def window_partition(x, window_size_h, window_size_w):
     """
     window-rize input
     """
-    B, C, H, W = x.shape
-    x = x.permute(0,2,3,1)  # to (B, H, W, C)
+    B, C, H, W = x.shape # (BS, 256, 16, 16)
+    x = x.permute(0,2,3,1)  # to (B, H, W, C) (16 16 16 256, h16 w32)
+    #print(B, C, H, W, window_size_h, window_size_w)
     x = x.reshape(B, H // window_size_h, window_size_h, W // window_size_w, window_size_w, C)
     windows = x.permute(0, 1, 3, 2, 4, 5).reshape(-1, window_size_h, window_size_w, C)
     windows = windows.reshape(-1, window_size_h*window_size_w, C).permute(1,0,2) # window_size_h * window_size_w, num_windows * Bs, C

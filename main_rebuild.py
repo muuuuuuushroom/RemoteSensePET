@@ -103,7 +103,12 @@ def main(args):
 
     # output directory and log 
     if utils.is_main_process:
-        output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
+        if args.dataset_file in ['People', 'Ship', 'Car']:
+            output_dir = os.path.join("./outputs/rsc", args.dataset_file, args.output_dir)
+        elif args.dataset_file in ['SHA', 'SHB']:
+            output_dir = os.path.join("./outputs/cc", args.dataset_file, args.output_dir)
+        else:
+            output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
         os.makedirs(output_dir, exist_ok=True)
         output_dir = Path(output_dir)
         save_config(args, os.path.join(output_dir, 'config.yaml'))

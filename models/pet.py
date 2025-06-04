@@ -369,7 +369,7 @@ class BasePETCount(nn.Module):
                'pred_offsets': outputs_offsets[-1]
                }
         
-        if self.opt_query:
+        if self.opt_query and 'test' in kwargs:
             out['reference'] = kwargs['refer']
             rb_first_dim = refer_bsig.shape[0]
             pq_ex = pq_or.unsqueeze(0).expand(rb_first_dim, -1, -1)

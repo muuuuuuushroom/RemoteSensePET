@@ -320,7 +320,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
 
         # target boxes
         # print('\n\nargs is \n\n', args.dataset_file, '\n\n')  # dataset_file='RTC'
-        if args.dataset_file != "RTC":
+        if args.dataset_file in ['Ship', 'People', 'Car']:
             target_set = targets[0]["points"]
             outputs_set = outputs["pred_points"][0]
             outputs_set[:, 0] *= img_h
@@ -357,18 +357,21 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
         results = {}
         toTensor = lambda x: torch.tensor(x).float().cuda()
         results['mae'], results['mse'] = toTensor(mae), toTensor(mse)
-        results["Prec"], results["Recall"], results["F1_s"], results["abs"] = Prec, Recall, F1_s, abs_
         
-        if gt_cnt > gt_determined:
-            (   
-                results["mae_ac"],
-                results["mse_ac"],
-                results["pre_ac"],
-                results["reca_ac"],
-                results["f1_ac"],
-                results["abs_ac"]
-            ) = (toTensor(mae_ac), toTensor(mse_ac), pre_ac, rec_ac, f1_ac, abs_ac)
-        # results['gt_cnt'], results['pd_cnt'] = toTensor(gt_cnt), toTensor(predict_cnt)
+        if args.dataset_file in ['Ship', 'People', 'Car']:
+            results["Prec"], results["Recall"], results["F1_s"], results["abs"] = Prec, Recall, F1_s, abs_
+            if gt_cnt > gt_determined:
+                (   
+                    results["mae_ac"],
+                    results["mse_ac"],
+                    results["pre_ac"],
+                    results["reca_ac"],
+                    results["f1_ac"],
+                    results["abs_ac"]
+                ) = (toTensor(mae_ac), toTensor(mse_ac), pre_ac, rec_ac, f1_ac, abs_ac)
+        else:
+            results["Prec"], results["Recall"], results["F1_s"], results["abs"]= 0, 0, 0, 0
+            results["mae_ac"], results["mse_ac"], results["pre_ac"], results["reca_ac"], results["f1_ac"], results["abs_ac"] = 0, 0, 0, 0, 0, 0
         
         if distributed:
             # results = utils.reduce_dict(results)
@@ -460,21 +463,21 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
     results["racc"] = metrics.compute_racc(gt_cnt_array, pd_cnt_array)
     results["rac_ac"] = metrics.compute_racc(gt_cnt_array_ac, pd_cnt_array_ac)
     
-    order = ["mae", "mae_ac",
-             "mse", "mse_ac",
-             "Prec", "pre_ac",
-             "Recall", "rec_ac",
-             "F1_s", "f1_ac",
-             "abs", "abs_ac",
-             "r2", "r2_ac",
-             "racc", "rac_ac",
-             "rmae", "rmse"]
-    
-    def custom_sort_key(item):
-        key, value = item
-        index = order.index(key) if key in order else len(order) + 1
-        return (index, not key.endswith('_ac'), key)
-    
-    results = dict(sorted(results.items(), key=custom_sort_key))
+    if args.dataset_file in ['Ship', 'People', 'Car']:
+        order = ["mae", "mae_ac",
+                "mse", "mse_ac",
+                "Prec", "pre_ac",
+                "Recall", "rec_ac",
+                "F1_s", "f1_ac",
+                "abs", "abs_ac",
+                "r2", "r2_ac",
+                "racc", "rac_ac",
+                "rmae", "rmse"]
+        
+        def custom_sort_key(item):
+            key, value = item
+            index = order.index(key) if key in order else len(order) + 1
+            return (index, not key.endswith('_ac'), key)
+        results = dict(sorted(results.items(), key=custom_sort_key))
 
     return results
