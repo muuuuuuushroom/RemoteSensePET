@@ -23,7 +23,7 @@ from util.custom_log import *
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
-    parser.add_argument('--cfg', type=str, default='configs_con/baseline.yaml', 
+    parser.add_argument('--cfg', type=str, default='configs_con/vgg.yaml', 
                         help='base cfg file for training model')
     
     parser.add_argument('--save_ckpt_freq', type=int, default=500,
@@ -57,6 +57,8 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
+    torch.backends.cudnn.deterministic = True  # reproducibility
 
     # build model
     model, criterion = build_model(args)
@@ -106,7 +108,7 @@ def main(args):
         if args.dataset_file in ['People', 'Ship', 'Car']:
             output_dir = os.path.join("./outputs/rsc", args.dataset_file, args.output_dir)
         elif args.dataset_file in ['SHA', 'SHB']:
-            output_dir = os.path.join("./outputs/cc", args.dataset_file, args.output_dir)
+            output_dir = os.path.join("./outputs/true_cc", args.dataset_file, args.output_dir)
         else:
             output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
         os.makedirs(output_dir, exist_ok=True)
@@ -184,7 +186,7 @@ def main(args):
                 f.write(json.dumps(log_stats) + "\n")
 
         # evaluation
-        if (epoch) % args.eval_freq == 0:
+        if (epoch) % args.eval_freq == 0: #and epoch > 0:
             print('\ntesting\n')
             t1 = time.time()
             test_stats = evaluate(model, data_loader_val, device, epoch, criterion=criterion, distributed=args.distributed, args=args)

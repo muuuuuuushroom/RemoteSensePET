@@ -581,7 +581,7 @@ class PET(nn.Module):
             weight_split = max_split_weight * (0.5 * (1 + torch.cos(2 * torch.pi * progress_within_cycle)))
         else:
             weight_split = 0.1
-            
+
         loss_dict['loss_split'] = loss_split
         weight_dict['loss_split'] = weight_split
 
@@ -598,9 +598,12 @@ class PET(nn.Module):
         # backbone
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
-        features, pos = self.backbone(samples)  
-        #  features: ['4x':BCHW, '8x':BCHW]
-        #  pos: ['4x':B*hidden_dim*H*W, '8x':B*hidden_dim*H*W]
+            
+        if 'test' in kwargs:
+            flag = 0
+        features, pos = self.backbone(samples) 
+        #  sample.tensors shape[bs, 3, patch_size]                       VGG 64/32
+        #  features.tensors/pos shape: ['4x':BCHW, '8x':BCHW] [4x/8x: bs, c, 32/16, 32/16]
         
         # prob_map: tuple[0: b,1,32,32; 1:b,1,256,256] 0 from fpn_4x, 1 interpolated
         # kwargs['prob_map']=prob_map
@@ -638,9 +641,9 @@ class PET(nn.Module):
         criterion, targets, epoch = kwargs['criterion'], kwargs['targets'], kwargs['epoch']
         if self.prob_map_lc == 'f4x':
             prob, prob_est = kwargs['probability'], kwargs['prob_map_up']
-            losses = self.compute_loss(outputs, criterion, targets, epoch, samples, prob, prob_est)
         else:
-            losses = self.compute_loss(outputs, criterion, targets, epoch, samples)
+            prob, prob_est = None, None
+        losses = self.compute_loss(outputs, criterion, targets, epoch, samples, prob, prob_est)
         return losses
     
     def test_forward(self, samples, features, pos, **kwargs):

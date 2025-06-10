@@ -260,9 +260,9 @@ def _max_by_axis_pad(the_list):
         for index, item in enumerate(sublist):
             maxes[index] = max(maxes[index], item)
 
-    # block = 256
-    # for i in range(2):
-    #     maxes[i+1] = ((maxes[i+1] - 1) // block + 1) * block
+    block = 256
+    for i in range(2):
+        maxes[i+1] = ((maxes[i+1] - 1) // block + 1) * block
     return maxes
 
 

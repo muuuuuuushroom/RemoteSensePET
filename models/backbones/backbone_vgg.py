@@ -101,10 +101,10 @@ class Backbone_VGG(BackboneBase_VGG):
     """
     VGG backbone
     """
-    def __init__(self, name: str, return_interm_layers: bool):
+    def __init__(self, name: str, return_interm_layers: bool, num_channels: int):
         if name == 'vgg16_bn':
             backbone = vgg16_bn(pretrained=True)
-        num_channels = 256
+        # num_channels = num_channels 265, 512
         super().__init__(backbone, num_channels, name, return_interm_layers)
 
 
@@ -125,7 +125,7 @@ class Joiner(nn.Sequential):
 
 def build_backbone_vgg(args):
     position_embedding = build_position_encoding(args)
-    backbone = Backbone_VGG(args.backbone, True)
+    backbone = Backbone_VGG(args.backbone, True, args.backbone_num_channels)
     model = Joiner(backbone, position_embedding)
     model.num_channels = backbone.num_channels
     return model

@@ -540,7 +540,7 @@ class TransformerDecoder(nn.Module):
         query_pos_2d = self.init_offset_generator(query_pos.reshape(-1, self.d_model))
         nums, new_bs, dimen = box_unsigmoid.shape
         query_pos_2d = query_pos_2d.reshape(nums, new_bs, dimen) 
-        query_pos_2d = (query_pos_2d.sigmoid() - 0.5) * 2.0
+        # query_pos_2d = (query_pos_2d.sigmoid() - 0.5) * 2.0
         box = query_pos_2d
         
         # box = box_unsigmoid.sigmoid()   # box.shape = [ decw*dech, bs*nums, C=2]
@@ -706,6 +706,8 @@ class EncoderLayer(nn.Module):
         #                       key_padding_mask=src_key_padding_mask)[0]
         src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
+        # if src2.isnan().any():
+        #     src2 = torch.nan_to_num(src2, nan=0.0, posinf=1e4, neginf=-1e4)
         src = src + src2
         src = self.norm1(src)
 

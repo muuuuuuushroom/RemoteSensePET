@@ -9,7 +9,6 @@ import glob
 import scipy.io as io
 import torchvision.transforms as standard_transforms
 import warnings
-import math
 warnings.filterwarnings('ignore')
 
 class SHA(Dataset):
@@ -66,7 +65,7 @@ class SHA(Dataset):
 
         # random scale
         if self.train:
-            scale_range = [0.8, 1.2]           
+            scale_range = [0.7, 1.3]           
             min_size = min(img.shape[1:])
             scale = random.uniform(*scale_range)
             
@@ -78,8 +77,6 @@ class SHA(Dataset):
         # random crop patch
         if self.train:
             img, points = random_crop(img, points, patch_size=self.patch_size)
-        else:
-            img, points = resize_with_padding_center(img, points)
 
         # random flip
         if random.random() > 0.5 and self.train and self.flip:
@@ -134,44 +131,6 @@ def random_crop(img, points, patch_size=256):
     result_points[:, 1] *= fW
     return result_img, result_points
 
-def get_patch_size(img_h, img_w):
-    '''
-        return min common multiple
-    '''
-    common=256  # 128 if noencoder else 256
-    patch_h = math.ceil(img_h / common) * common
-    patch_w = math.ceil(img_w / common) * common
-
-    return patch_h, patch_w
-
-def resize_with_padding_center(img, points):
-    
-    imgH, imgW = img.shape[-2:]
-    patch_h, patch_w = get_patch_size(imgH, imgW)
-
-    pad_h_total = patch_h - imgH
-    pad_w_total = patch_w - imgW
-
-    pad_top = pad_h_total // 2
-    pad_bottom = pad_h_total - pad_top
-    pad_left = pad_w_total // 2
-    pad_right = pad_w_total - pad_left
-
-    padding = (pad_left, pad_right, pad_top, pad_bottom)
-    pad_value = 255
-    # if img.max() > 1.5: 
-    #     pad_value = 255
-    # else:     
-    #     pad_value = 1.0
-
-    result_img = torch.nn.functional.pad(img, padding, value=pad_value)
-    result_points = points.copy()
-
-    if points is not None and len(points) > 0:
-        result_points[:, 0] += pad_top    # y
-        result_points[:, 1] += pad_left   # x
-        
-    return result_img, result_points
 
 def build(image_set, args):
     transform = standard_transforms.Compose([

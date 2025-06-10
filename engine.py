@@ -63,17 +63,17 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
         sample = restore_transform(images[idx])
         sample = pil_to_tensor(sample.convert("RGB")).numpy() * 255
         sample_vis = sample.transpose([1, 2, 0])[:, :, ::-1].astype(np.uint8).copy()
-        or_sample = sample_vis
+        # or_sample = sample_vis
         h, w = sample_vis.shape[:2]
         # sample_vis = cv2.resize(sample_vis, (512, 512))
         
         if not box_flag:
             # draw ground-truth points (red)
-            size = 3
+            size = 2
             for i, t in enumerate(gts[idx]):
                 # print('gt',(int(t[1]), int(t[0])))
                 sample_vis = cv2.circle(
-                    sample_vis, (int(t[1]), int(t[0])), size + 1, (0, 0, 255), -1
+                    sample_vis, (int(t[1]), int(t[0])), size, (0, 0, 255), -1
                 )
                 # cv2.putText(sample_vis, str(i+1), (int(t[1]+3), int(t[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
@@ -86,23 +86,23 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
                 # cv2.putText(sample_vis, str(i+1), (int(p[1]+3), int(p[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
             # draw point-query
-            for i, q in enumerate(queries[idx]):
+            # for i, q in enumerate(queries[idx]):
                 
-                if args.predict == 'origin':
-                    q[1] *= w
-                    q[0] *= h
+            #     if args.predict == 'origin':
+            #         q[1] *= w
+            #         q[0] *= h
                 
-                sample_vis = cv2.circle(
-                    sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
-                    )
+            #     sample_vis = cv2.circle(
+            #         sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
+            #         )
                 
-                # draw line between query and pred
-                q_x, q_y = int(q[1]), int(q[0])
-                p_x, p_y = int(pred[idx][i][1]), int(pred[idx][i][0])
-                overlay = sample_vis.copy()
-                cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
-                alpha = 0.5  
-                sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
+            #     # draw line between query and pred
+            #     q_x, q_y = int(q[1]), int(q[0])
+            #     p_x, p_y = int(pred[idx][i][1]*w), int(pred[idx][i][0]*h)
+            #     overlay = sample_vis.copy()
+            #     cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
+            #     alpha = 0.5  
+            #     sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
                 # cv2.putText(sample_vis, str(i+1), (int(q[1]*w-3), int(q[0]*h)-3), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
         if box_flag:
@@ -173,7 +173,7 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
             split_map = (split_map * 255).astype(np.uint8)
             split_map = cv2.applyColorMap(split_map, cv2.COLORMAP_JET)
             split_map = cv2.resize(split_map, (imgW, imgH), interpolation=cv2.INTER_NEAREST)
-            sample_vis = split_map * 0.3 + sample_vis
+            sample_vis = split_map * 0.7 + sample_vis
 
         # save image
         if vis_dir is not None:
@@ -215,6 +215,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     for samples, targets, probability in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
+        # probability adapatation
         if probability[0] is not None:
             probability = probability.to(device)
         
