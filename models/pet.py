@@ -9,6 +9,7 @@ import math
 import sys
 import os
 import scipy.spatial
+from scipy.spatial import KDTree
 
 from models.transformer.utils import query_partition
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
@@ -46,7 +47,7 @@ class QuadtreeSplitterWithAttention(nn.Module):
             nn.Sigmoid()
         )
         
-    def forward(self, src, pos):
+    def forward(self, src, pos, mask, train_flag):
             """
             Args:
                 src: Input feature map of shape [batch_size, hidden_dim, height, width]
@@ -55,7 +56,7 @@ class QuadtreeSplitterWithAttention(nn.Module):
                 Output of shape [batch_size, 1, pooled_height, pooled_width]
             """
             batch_size, hidden_dim, height, width = src.shape
-
+            
             # Add positional encoding
             src_with_pos = src + pos 
 
@@ -65,8 +66,28 @@ class QuadtreeSplitterWithAttention(nn.Module):
 
             pooled_src = pooled_src.permute(0, 2, 3, 1).reshape(-1, pooled_h * pooled_w, hidden_dim).permute(1, 0, 2)  # Query
             pooled_src_with_pos = pooled_src_with_pos.permute(0, 2, 3, 1).reshape(-1, pooled_h * pooled_w, hidden_dim).permute(1, 0, 2)  # Key & Value
-
-            attn_output, _ = self.attention(pooled_src, pooled_src_with_pos, pooled_src_with_pos)
+            
+            # mask_win = (?)  # got bug here
+            if mask is not None and not train_flag:
+                if mask.dim() == 3:
+                    mask = mask.unsqueeze(1)  # [B,1,H,W]
+                mask_float = mask.float()
+                with torch.no_grad():
+                    mask_win = F.avg_pool2d(
+                            mask_float, 
+                            kernel_size=(self.context_h, self.context_w),
+                            stride=(self.context_h, self.context_w)
+                        )
+                mask_win = (mask_win < 1.0).squeeze(1)  # [B, pooled_h, pooled_w]
+                mask_win = mask_win.view(batch_size, -1) # [B, pooled_h*pooled_w].permute?
+            else:
+                mask_win = None
+                
+            attn_output, _ = self.attention(query = pooled_src, 
+                                            key = pooled_src_with_pos, 
+                                            value = pooled_src_with_pos,
+                                            attn_mask = None,
+                                            key_padding_mask = mask_win) #mask_win) #mask_win)
             attn_output = attn_output.permute(1, 0, 2)  # [batch_size, pooled_h * pooled_w, hidden_dim]
 
             # Project back to desired output dimension
@@ -722,9 +743,11 @@ class PET(nn.Module):
         sp_h, sp_w = src_h, src_w                         # sparse 16, 16                        
         ds_h, ds_w = int(src_h * 2), int(src_w * 2)       # dense = sparse * 2, which 32, 32
         
+        train_flag = True if 'train' in kwargs else False
+        
         src = encode_src if not self.encoder_free else src
         if self.attn_splitter:
-            split_map = self.quadtree_splitter(src, src_pos_embed)  # split_map: B*1*src_h/4*src_w/8   bs*1*4*2
+            split_map = self.quadtree_splitter(src, src_pos_embed, mask, train_flag)  # split_map: B*1*src_h/4*src_w/8   bs*1*4*2
         else:
             split_map = self.quadtree_splitter(src)  # split_map: B*1*src_h/4*src_w/8
             
@@ -764,7 +787,7 @@ def generate_gaussian_kernel(size, sigma, device):
     kernel = kernel / kernel.sum()
     return kernel
 
-def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_h, img_w, device, alpha=0.4):
+# def build_density_map_from_points_with_kdtree_old(target_points, batch_indices, img_h, img_w, device, alpha=0.4):
     B = int(batch_indices.max().item()) + 1
     density = torch.zeros((B, 1, img_h, img_w), dtype=torch.float32, device=device)
 
@@ -826,6 +849,172 @@ def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_
                 density[b, 0] = torch.maximum(density[b, 0], response[0, 0])
 
     return density  # shape [B, 1, H, W]
+
+def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_h, img_w, device, alpha=0.4):
+    B = int(batch_indices.max().item()) + 1  # Calculate the batch size
+    density = torch.zeros((B, 1, img_h, img_w), dtype=torch.float32, device=device)  # Initialize the density map
+
+    for b in range(B):
+        mask = batch_indices == b
+        points_b = target_points[mask]  # [nb, 2], get points for batch b
+        if points_b.numel() == 0:
+            continue  # Skip empty batches
+
+        # Unnormalize to pixel coordinates
+        pts_np = (points_b * torch.tensor([img_w, img_h], device=device)).cpu().numpy()
+        pts_np = np.round(pts_np).astype(np.int32)
+        pts_np[:, 0] = np.clip(pts_np[:, 0], 0, img_w - 1)
+        pts_np[:, 1] = np.clip(pts_np[:, 1], 0, img_h - 1)
+
+        num_pts = len(pts_np)
+        if num_pts == 0:
+            continue
+
+        # Build KDTree (k = min(4, n))
+        k = min(4, num_pts)
+        tree = scipy.spatial.KDTree(pts_np.copy(), leafsize=2048)
+        distances, locations = tree.query(pts_np, k=k)
+
+        for i, (x, y) in enumerate(pts_np):
+            pt_map = torch.zeros((1, 1, img_h, img_w), device=device)
+            pt_map[0, 0, y, x] = 1.0
+
+            # Estimate sigma
+            if num_pts > 1 and distances[i].shape[0] >= 2 and np.isfinite(distances[i][1]):
+                di = distances[i][1]
+                neighbor_idx = locations[i][1:]
+                neighbor_dists = []
+
+                for j in neighbor_idx:
+                    if j < len(distances) and distances[j].shape[0] >= 2 and np.isfinite(distances[j][1]):
+                        neighbor_dists.append(distances[j][1])
+
+                if len(neighbor_dists) > 0:
+                    d_mtop3 = np.mean(neighbor_dists)
+                    d = min(di, d_mtop3)
+                else:
+                    d = di
+                sigma = max(alpha * d, 1.0)
+            else:
+                sigma = np.average([img_h, img_w]) / 4.0  # fallback sigma
+
+            # Generate Gaussian kernel
+            kernel_size = int(6 * sigma)
+            if kernel_size % 2 == 0:
+                kernel_size += 1
+
+            kernel = generate_gaussian_kernel(kernel_size, sigma, device).unsqueeze(0).unsqueeze(0)
+            response = F.conv2d(pt_map, kernel, padding=kernel_size // 2)
+            peak = response[0, 0, y, x]
+
+            if peak > 0:
+                response = response / peak
+                density[b, 0] = torch.maximum(density[b, 0], response[0, 0])
+
+    return density  # shape [B, 1, H, W]
+
+def generate_prob_map_from_points(targets, img_h, img_w, device='cuda', alpha=0.4):
+    """
+    Generate a probability map using points from the target dictionary list.
+    
+    Args:
+        targets (list of dict): List of dictionaries, each containing 'points', 'labels', and 'density'.
+        img_h (int): Height of the image.
+        img_w (int): Width of the image.
+        device (str): The device to run the computation on ('cuda' or 'cpu').
+        alpha (float): A scaling factor for the sigma value.
+
+    Returns:
+        torch.Tensor: The generated probability map of shape (1, img_h, img_w).
+    """
+    # Collect points from all entries in the targets list
+    all_points = []
+    for target in targets:
+        points = target['points'].cpu().numpy()
+        all_points.append(points)
+    
+    # Convert all points to a numpy array
+    all_points = np.vstack(all_points)
+
+    # Ensure points are valid
+    if len(all_points) == 0:
+        return torch.zeros((1, img_h, img_w), dtype=torch.float32, device=device)
+
+    # Create a KDTree to compute distances between points
+    tree = KDTree(all_points)
+    distances, locations = tree.query(all_points, k=4)
+
+    # Initialize an empty density map
+    density = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
+
+    for i, pt in enumerate(all_points):
+        # Convert point coordinates to integers
+        x, y = int(pt[0]), int(pt[1])
+
+        # Create a 2D map with a single point set to 1
+        pt2d = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
+        pt2d[0, 0, y, x] = 1.0
+
+        # Dynamically calculate sigma based on neighbor distances
+        if len(distances[i]) >= 2 and np.isfinite(distances[i][1]):
+            di = distances[i][1]
+            neighbor_idx = locations[i][1:]
+            neighbor_distances = []
+            for idx in neighbor_idx:
+                if np.isfinite(distances[idx][1]):
+                    neighbor_distances.append(distances[idx][1])
+
+            if len(neighbor_distances) > 0:
+                d_mtop3 = np.mean(neighbor_distances)
+                d = min(di, d_mtop3)
+            else:
+                d = di  # fallback
+            
+            sigma = alpha * d
+        else:
+            sigma = np.average(np.array([img_h, img_w])) / 4.0  # fallback
+
+        sigma = max(sigma, 1.0)
+
+        # Generate a Gaussian kernel based on sigma
+        kernel_size = int(6 * sigma)
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+        gaussian_kernel = generate_gaussian_kernel(kernel_size, sigma, device)
+        gaussian_kernel = gaussian_kernel.unsqueeze(0).unsqueeze(0)  # [1, 1, k, k]
+
+        # Apply Gaussian filter to the point map
+        filter = F.conv2d(pt2d, gaussian_kernel, padding=kernel_size // 2)
+
+        # Normalize the filter to avoid numerical instability
+        peak = filter[0, 0, y, x]
+        if peak > 0:
+            filter = filter / peak
+
+        # Update the density map with the current filter
+        density = torch.maximum(density, filter)
+
+    return density.squeeze()
+
+def generate_gaussian_kernel_prob(kernel_size, sigma, device='cuda'):
+    """
+    Generate a Gaussian kernel for convolution.
+    
+    Args:
+        kernel_size (int): The size of the kernel.
+        sigma (float): The standard deviation of the Gaussian.
+        device (str): The device to run the computation on ('cuda' or 'cpu').
+        
+    Returns:
+        torch.Tensor: The generated Gaussian kernel.
+    """
+    x = torch.arange(kernel_size, device=device) - kernel_size // 2
+    y = torch.arange(kernel_size, device=device) - kernel_size // 2
+    xx, yy = torch.meshgrid(x, y, indexing='ij')
+    kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+    kernel = kernel / kernel.sum()
+    return kernel
 
 
 class SetCriterion(nn.Module):
@@ -994,10 +1183,30 @@ class SetCriterion(nn.Module):
     def loss_maps(self, outputs, targets, indices, num_points, **kwargs):
         criterion = nn.MSELoss(reduction='mean').cuda()
         
-        prob = kwargs['prob']
+        # idx = self._get_src_permutation_idx(indices)
+        # src_points = outputs['pred_points'][idx]
+        
+        # batch_indices = []  # which image in batch this point came from
+        # for i, (src_idx, _) in enumerate(indices):
+        #     batch_indices.extend([i] * len(src_idx))
+        # batch_indices = torch.tensor(batch_indices, device=src_points.device)
+        # target_points = torch.cat([t['points'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        # img_shape = outputs['img_shape']
+        # img_h, img_w = img_shape
+        # target_points[:, 0] /= img_h
+        # target_points[:, 1] /= img_w
+        
+        # # prob = kwargs['prob']
+        # gt_prob_map = build_density_map_from_points_with_kdtree(
+        #         target_points, batch_indices, img_h, img_w, device=src_points.device
+            # )
+        # gt_prob_map = kwargs['prob']
+        img_shape = outputs['img_shape']
+        img_h, img_w = img_shape
+        gt_prob_map = generate_prob_map_from_points(targets, img_h, img_w)
         prob_est = kwargs['prob_est']
         
-        prob_loss = criterion(prob, prob_est)
+        prob_loss = criterion(gt_prob_map, prob_est)
         losses = {}
         losses['loss_maps'] = prob_loss
         return losses

@@ -6,13 +6,21 @@ from torch.utils.data import Dataset
 from PIL import Image
 import cv2
 import glob
+import scipy
 import scipy.io as io
 import torchvision.transforms as standard_transforms
 import warnings
+
+import torch
+import torch.nn.functional as F
+from scipy.ndimage import gaussian_filter
+from scipy.spatial import KDTree
+
 warnings.filterwarnings('ignore')
 
 class SHA(Dataset):
-    def __init__(self, data_root, transform=None, train=False, flip=False):
+    def __init__(self, data_root, transform=None, train=False, flip=False, 
+                 prob_map_lc=None, patch_size=256):
         self.root_path = data_root
         
         prefix = "train_data" if train else "test_data"
@@ -31,7 +39,9 @@ class SHA(Dataset):
         self.transform = transform
         self.train = train
         self.flip = flip
-        self.patch_size = 256
+        self.patch_size = patch_size
+        
+        self.prob_map_lc = prob_map_lc
     
     def compute_density(self, points):
         """
@@ -65,7 +75,7 @@ class SHA(Dataset):
 
         # random scale
         if self.train:
-            scale_range = [0.7, 1.3]           
+            scale_range = [0.8, 1.2]
             min_size = min(img.shape[1:])
             scale = random.uniform(*scale_range)
             
@@ -94,8 +104,13 @@ class SHA(Dataset):
 
         if not self.train:
             target['image_path'] = img_path
-
-        return img, target, None
+            
+        # if self.prob_map_lc == 'f4x' and self.train:
+        #     prob = generate_prob_map_from_points(target['points'], self.patch_size, self.patch_size)
+        # else:
+        #     prob = None
+        prob = None
+        return img, target, prob
 
 
 def load_data(img_gt_path, train):
@@ -131,6 +146,103 @@ def random_crop(img, points, patch_size=256):
     result_points[:, 1] *= fW
     return result_img, result_points
 
+def generate_prob_map_from_points(points, img_h, img_w, device='cuda', alpha=0.4):
+    """
+    Generate a probability map using a list of points.
+    
+    Args:
+        points (numpy.ndarray): Array of points with shape (N, 2), where N is the number of points.
+        img_h (int): Height of the image.
+        img_w (int): Width of the image.
+        device (str): The device to run the computation on ('cuda' or 'cpu').
+        alpha (float): A scaling factor for the sigma value.
+
+    Returns:
+        torch.Tensor: The generated probability map of shape (1, img_h, img_w).
+    """
+    # Ensure points are valid
+    if len(points) == 0:
+        return torch.zeros((1, img_h, img_w), dtype=torch.float32, device=device)
+
+    # Convert points to a numpy array
+    pts = np.array(points)
+
+    # Create a KDTree to compute distances between points
+    tree = KDTree(pts)
+    distances, locations = tree.query(pts, k=4)
+
+    # Initialize an empty density map
+    density = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
+
+    for i, pt in enumerate(pts):
+        x, y = pt
+
+        # Create a 2D map with a single point set to 1
+        pt2d = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
+        pt2d[0, 0, y, x] = 1.0
+
+        # Dynamically calculate sigma based on neighbor distances
+        if len(distances[i]) >= 2 and np.isfinite(distances[i][1]):
+            di = distances[i][1]
+            neighbor_idx = locations[i][1:]
+            neighbor_distances = []
+            for idx in neighbor_idx:
+                if np.isfinite(distances[idx][1]):
+                    neighbor_distances.append(distances[idx][1])
+
+            if len(neighbor_distances) > 0:
+                d_mtop3 = np.mean(neighbor_distances)
+                d = min(di, d_mtop3)
+            else:
+                d = di  # fallback
+            
+            sigma = alpha * d
+        else:
+            sigma = np.average(np.array([img_h, img_w])) / 4.0  # fallback
+
+        sigma = max(sigma, 1.0)
+
+        # Generate a Gaussian kernel based on sigma
+        kernel_size = int(6 * sigma)
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+        gaussian_kernel = generate_gaussian_kernel(kernel_size, sigma, device)
+        gaussian_kernel = gaussian_kernel.unsqueeze(0).unsqueeze(0)  # [1, 1, k, k]
+
+        # Apply Gaussian filter to the point map
+        filter = F.conv2d(pt2d, gaussian_kernel, padding=kernel_size // 2)
+
+        # Normalize the filter to avoid numerical instability
+        peak = filter[0, 0, y, x]
+        if peak > 0:
+            filter = filter / peak
+
+        # Update the density map with the current filter
+        density = torch.maximum(density, filter)
+
+    return density.squeeze()
+
+def generate_gaussian_kernel(kernel_size, sigma, device='cuda'):
+    """
+    Generate a Gaussian kernel for convolution.
+    
+    Args:
+        kernel_size (int): The size of the kernel.
+        sigma (float): The standard deviation of the Gaussian.
+        device (str): The device to run the computation on ('cuda' or 'cpu').
+        
+    Returns:
+        torch.Tensor: The generated Gaussian kernel.
+    """
+    x = torch.arange(kernel_size, device=device) - kernel_size // 2
+    y = torch.arange(kernel_size, device=device) - kernel_size // 2
+    xx, yy = torch.meshgrid(x, y, indexing='ij')
+    kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+    kernel = kernel / kernel.sum()
+    return kernel
+
+
 
 def build(image_set, args):
     transform = standard_transforms.Compose([
@@ -140,7 +252,8 @@ def build(image_set, args):
     
     data_root = args.data_path
     if image_set == 'train':
-        train_set = SHA(data_root, train=True, transform=transform, flip=True)
+        train_set = SHA(data_root, train=True, transform=transform, flip=True, 
+                        prob_map_lc=args.prob_map_lc, patch_size=args.patch_size)
         return train_set
     elif image_set == 'val':
         val_set = SHA(data_root, train=False, transform=transform)

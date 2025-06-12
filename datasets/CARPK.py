@@ -173,13 +173,13 @@ class SHA(Dataset):
                 img, points, bboxs = scale_robust(img, points, bboxs, index, self.robust_para)
             
             # for padding, center by default
-            if self.test_str == 'padding_center':
-                # img, points, bboxs = resize_padding(img, points, bboxs, self.category)
-                img, points, bboxs = resize_with_padding_center(img, points, bboxs)
-            elif self.test_str == 'padding':
-                img, points, bboxs = resize_padding(img, points, bboxs, self.category)
-            elif self.test_str == 'resize':
-                img, points, bboxs = resize(img, points, bboxs, self.category)
+            # if self.test_str == 'padding_center':
+            #     # img, points, bboxs = resize_padding(img, points, bboxs, self.category)
+            #     img, points, bboxs = resize_with_padding_center(img, points, bboxs)
+            # elif self.test_str == 'padding':
+            #     img, points, bboxs = resize_padding(img, points, bboxs, self.category)
+            # elif self.test_str == 'resize':
+            #     img, points, bboxs = resize(img, points, bboxs, self.category)
                 
 
         if random.random() > 0.5 and self.train and self.flip:

@@ -107,7 +107,7 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
 
         if box_flag:
             pq_ex = outputs['pq_ex']
-            sample_vis_box = or_sample
+            # sample_vis_box = or_sample
             batch_size, num_points, _ = pq_ex.shape
             
             fixed_colors = [
