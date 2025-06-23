@@ -109,6 +109,8 @@ def main(args):
             output_dir = os.path.join("./outputs/rsc", args.dataset_file, args.output_dir)
         elif args.dataset_file in ['SHA', 'SHB']:
             output_dir = os.path.join("./outputs/true_cc", args.dataset_file, args.output_dir)
+        elif args.dataset_file in ['RTC', 'WuhanMetro']:
+            output_dir = os.path.join("./outputs/rtc_s", args.dataset_file, args.output_dir)
         else:
             output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
         os.makedirs(output_dir, exist_ok=True)

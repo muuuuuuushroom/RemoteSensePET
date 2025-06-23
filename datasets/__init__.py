@@ -4,6 +4,7 @@ import torchvision
 from .SHA import build as build_sha
 from .RTC import build_rtc
 from .CARPK import build as build_rsc
+from .WuhanMetro_new import build_whm
 
 from .CORN import build as build_corn
 from .SOY import build_soy
@@ -11,6 +12,7 @@ from .SOY import build_soy
 data_path = {
     'SHA': 'data/Crowd_Counting/ShanghaiTech/part_A_final/',
     'SHB': 'data/Crowd_Counting/ShanghaiTech/part_B_final/',
+    'WuhanMetro': 'data/WuhanMetroCount',
     'RTC': '/data/zlt/PET/RTC/data/RTC',
     
     'People': 'data/People',
@@ -18,7 +20,6 @@ data_path = {
     'Car': 'data/Car',
     
     'CORN': '/data/zlt/PET/origin_pet/PET/data/dataset_corn',
-    
     'SOY': '/data/zlt/RemoteSensePET/data/soybeam',
 }
 
@@ -34,4 +35,6 @@ def build_dataset(image_set, args):
         return build_corn(image_set, args)
     elif args.dataset_file == 'SOY':
         return build_soy(image_set, args)
+    elif args.dataset_file == 'WuhanMetro':
+        return build_whm(image_set, args)
     raise ValueError(f'dataset {args.dataset_file} not supported')

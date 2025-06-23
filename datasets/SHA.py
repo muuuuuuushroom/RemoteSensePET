@@ -87,6 +87,9 @@ class SHA(Dataset):
         # random crop patch
         if self.train:
             img, points = random_crop(img, points, patch_size=self.patch_size)
+            eps = 1e-5
+            points[:, 0] = np.clip(points[:, 0], 0, self.patch_size - eps)
+            points[:, 1] = np.clip(points[:, 1], 0, self.patch_size - eps)
 
         # random flip
         if random.random() > 0.5 and self.train and self.flip:

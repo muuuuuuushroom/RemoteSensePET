@@ -37,8 +37,8 @@ for filename in os.listdir(folder_path):
                 'Pred Value': pred_value
             })
 
-all_gt = np.array(all_gt)
-all_pred = np.array(all_pred)
+all_gt = np.array(all_gt).astype(float)
+all_pred = np.array(all_pred).astype(float)
 
 df_results = pd.DataFrame(results)
 excel_output_path = '/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/r2/file_gt_pred_data.xlsx'

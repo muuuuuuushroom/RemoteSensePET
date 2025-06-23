@@ -67,43 +67,43 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
         h, w = sample_vis.shape[:2]
         # sample_vis = cv2.resize(sample_vis, (512, 512))
         
-        if not box_flag:
-            # draw ground-truth points (red)
-            size = 2
-            for i, t in enumerate(gts[idx]):
-                # print('gt',(int(t[1]), int(t[0])))
-                sample_vis = cv2.circle(
-                    sample_vis, (int(t[1]), int(t[0])), size, (0, 0, 255), -1
+        # if not box_flag:
+        # draw ground-truth points (red)
+        size = 3
+        for i, t in enumerate(gts[idx]):
+            # print('gt',(int(t[1]), int(t[0])))
+            sample_vis = cv2.circle(
+                sample_vis, (int(t[1]), int(t[0])), size, (0, 0, 255), -1
+            )
+            # cv2.putText(sample_vis, str(i+1), (int(t[1]+3), int(t[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+        # draw predictions (green)
+        for i, p in enumerate(pred[idx]):
+            # print('pred',(int(p[1]), int(p[0])))
+            sample_vis = cv2.circle(
+                sample_vis, (int(p[1]*w), int(p[0]*h)), size, (0, 255, 0), -1
                 )
-                # cv2.putText(sample_vis, str(i+1), (int(t[1]+3), int(t[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            # cv2.putText(sample_vis, str(i+1), (int(p[1]+3), int(p[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            # draw predictions (green)
-            for i, p in enumerate(pred[idx]):
-                # print('pred',(int(p[1]), int(p[0])))
-                sample_vis = cv2.circle(
-                    sample_vis, (int(p[1]), int(p[0])), size, (0, 255, 0), -1
-                    )
-                # cv2.putText(sample_vis, str(i+1), (int(p[1]+3), int(p[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-            # draw point-query
-            # for i, q in enumerate(queries[idx]):
-                
-            #     if args.predict == 'origin':
-            #         q[1] *= w
-            #         q[0] *= h
-                
-            #     sample_vis = cv2.circle(
-            #         sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
-            #         )
-                
-            #     # draw line between query and pred
-            #     q_x, q_y = int(q[1]), int(q[0])
-            #     p_x, p_y = int(pred[idx][i][1]*w), int(pred[idx][i][0]*h)
-            #     overlay = sample_vis.copy()
-            #     cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
-            #     alpha = 0.5  
-            #     sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
-                # cv2.putText(sample_vis, str(i+1), (int(q[1]*w-3), int(q[0]*h)-3), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        # draw point-query
+        for i, q in enumerate(queries[idx]):
+            
+            if args.predict == 'origin':
+                q[1] *= w
+                q[0] *= h
+            
+            sample_vis = cv2.circle(
+                sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
+                )
+            
+            # draw line between query and pred
+            q_x, q_y = int(q[1]), int(q[0])
+            p_x, p_y = int(pred[idx][i][1]*w), int(pred[idx][i][0]*h)
+            overlay = sample_vis.copy()
+            cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
+            alpha = 0.5  
+            sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
+            # cv2.putText(sample_vis, str(i+1), (int(q[1]*w-3), int(q[0]*h)-3), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
         if box_flag:
             pq_ex = outputs['pq_ex']
@@ -283,7 +283,7 @@ def cal_distance(sig_s, ind, target_set, outputs_set):
 def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=False, args=None, criterion=None): 
     model.eval()
 
-    gt_determined = 100
+    gt_determined = 1 if args.dataset_file == 'WuhanMetro' else 100
     metric_logger = utils.MetricLogger(delimiter="  ", win_size=len(data_loader))
     header = 'Test:'
 

@@ -780,76 +780,6 @@ class PET(nn.Module):
         outputs['split_map_dense'] = split_map_dense
         return outputs
 
-def generate_gaussian_kernel(size, sigma, device):
-    ax = torch.arange(size, device=device) - size // 2
-    xx, yy = torch.meshgrid(ax, ax, indexing='ij')
-    kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma ** 2))
-    kernel = kernel / kernel.sum()
-    return kernel
-
-# def build_density_map_from_points_with_kdtree_old(target_points, batch_indices, img_h, img_w, device, alpha=0.4):
-    B = int(batch_indices.max().item()) + 1
-    density = torch.zeros((B, 1, img_h, img_w), dtype=torch.float32, device=device)
-
-    for b in range(B):
-        mask = batch_indices == b
-        points_b = target_points[mask]  # [nb, 2]
-        if points_b.numel() == 0:
-            continue
-
-        # Unnormalize to pixel coordinates
-        pts_np = (points_b * torch.tensor([img_w, img_h], device=device)).cpu().numpy()
-        pts_np = np.round(pts_np).astype(np.int32)
-        pts_np[:, 0] = np.clip(pts_np[:, 0], 0, img_w - 1)
-        pts_np[:, 1] = np.clip(pts_np[:, 1], 0, img_h - 1)
-
-        num_pts = len(pts_np)
-        if num_pts == 0:
-            continue
-
-        # Build KDTree (k = min(4, n))
-        k = min(4, num_pts)
-        tree = scipy.spatial.KDTree(pts_np.copy(), leafsize=2048)
-        distances, locations = tree.query(pts_np, k=k)
-
-        for i, (x, y) in enumerate(pts_np):
-            pt_map = torch.zeros((1, 1, img_h, img_w), device=device)
-            pt_map[0, 0, y, x] = 1.0
-
-            # Estimate sigma
-            if num_pts > 1 and distances[i].shape[0] >= 2 and np.isfinite(distances[i][1]):
-                di = distances[i][1]
-                neighbor_idx = locations[i][1:]
-                neighbor_dists = []
-
-                for j in neighbor_idx:
-                    if j < len(distances) and distances[j].shape[0] >= 2 and np.isfinite(distances[j][1]):
-                        neighbor_dists.append(distances[j][1])
-
-                if len(neighbor_dists) > 0:
-                    d_mtop3 = np.mean(neighbor_dists)
-                    d = min(di, d_mtop3)
-                else:
-                    d = di
-                sigma = max(alpha * d, 1.0)
-            else:
-                sigma = np.average([img_h, img_w]) / 4.0  # fallback sigma
-
-            # Generate Gaussian kernel
-            kernel_size = int(6 * sigma)
-            if kernel_size % 2 == 0:
-                kernel_size += 1
-
-            kernel = generate_gaussian_kernel(kernel_size, sigma, device).unsqueeze(0).unsqueeze(0)
-            response = F.conv2d(pt_map, kernel, padding=kernel_size // 2)
-            peak = response[0, 0, y, x]
-
-            if peak > 0:
-                response = response / peak
-                density[b, 0] = torch.maximum(density[b, 0], response[0, 0])
-
-    return density  # shape [B, 1, H, W]
-
 def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_h, img_w, device, alpha=0.4):
     B = int(batch_indices.max().item()) + 1  # Calculate the batch size
     density = torch.zeros((B, 1, img_h, img_w), dtype=torch.float32, device=device)  # Initialize the density map
@@ -947,9 +877,17 @@ def generate_prob_map_from_points(targets, img_h, img_w, device='cuda', alpha=0.
     # Initialize an empty density map
     density = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
 
-    for i, pt in enumerate(all_points):
+    # for i, pt in enumerate(all_points):
         # Convert point coordinates to integers
-        x, y = int(pt[0]), int(pt[1])
+        # x, y = int(pt[0]), int(pt[1])
+    for i, pt in enumerate(all_points):
+        # floor-int-clamp
+        x = int(np.floor(pt[0]))
+        y = int(np.floor(pt[1]))
+        if x < 0 or y < 0:
+            continue
+        x = min(x, img_w - 1)
+        y = min(y, img_h - 1)
 
         # Create a 2D map with a single point set to 1
         pt2d = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
@@ -981,7 +919,7 @@ def generate_prob_map_from_points(targets, img_h, img_w, device='cuda', alpha=0.
         if kernel_size % 2 == 0:
             kernel_size += 1
 
-        gaussian_kernel = generate_gaussian_kernel(kernel_size, sigma, device)
+        gaussian_kernel = generate_gaussian_kernel_prob(kernel_size, sigma, device)
         gaussian_kernel = gaussian_kernel.unsqueeze(0).unsqueeze(0)  # [1, 1, k, k]
 
         # Apply Gaussian filter to the point map
@@ -1016,6 +954,12 @@ def generate_gaussian_kernel_prob(kernel_size, sigma, device='cuda'):
     kernel = kernel / kernel.sum()
     return kernel
 
+def generate_gaussian_kernel(size, sigma, device):
+    ax = torch.arange(size, device=device) - size // 2
+    xx, yy = torch.meshgrid(ax, ax, indexing='ij')
+    kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma ** 2))
+    kernel = kernel / kernel.sum()
+    return kernel
 
 class SetCriterion(nn.Module):
     """ Compute the loss for PET:
@@ -1044,6 +988,7 @@ class SetCriterion(nn.Module):
         self.div_thrs_dict = {sparse_stride: 0.0, dense_stride:0.5}
         self.map_loss = map_loss
         self.opt_query = opt_query
+        self.probloss_cal = 'Linear'
     
     def loss_labels(self, outputs, targets, indices, num_points, log=True, **kwargs):
         """
@@ -1132,22 +1077,22 @@ class SetCriterion(nn.Module):
                 gt_prob_map[batch_indices],  # [N,1,H,W]
                 grid, mode='bilinear', align_corners=True
             ).squeeze(-1).squeeze(-1).squeeze(1)  # [N]
-            loss_points_raw = (1.0 - prob_vals.unsqueeze(1)).expand(-1, 2)
-            loss_points_raw = loss_points_raw * 0.05
-            # loss = F.binary_cross_entropy(prob_vals, torch.ones_like(prob_vals), reduction='none')  # shape: [N]
-            # loss_points_raw = loss.unsqueeze(1).expand(-1, 2)  # shape: [N, 2]
-            # prob = kwargs['prob']
-            # _, _, H, W = prob.shape
-            # x = (src_points[:, 0] * W).clamp(0, W - 1)
-            # y = (src_points[:, 1] * H).clamp(0, H - 1)
-            # x_norm = x / (W - 1) * 2 - 1  # scale to [-1, 1]
-            # y_norm = y / (H - 1) * 2 - 1
-            # grid = torch.stack([x_norm, y_norm], dim=1).unsqueeze(1).unsqueeze(1)
-            # prob_vals = F.grid_sample(
-            #     prob[batch_indices],  # [N,1,H,W]
-            #     grid, mode='bilinear', align_corners=True
-            # ).squeeze(-1).squeeze(-1).squeeze(1)
-            # loss_points_raw = (1.0 - prob_vals.unsqueeze(1)).expand(-1, 2)
+            
+            eps = 1e-6
+            if self.probloss_cal == 'Linear': # Linear, y = 1 - p
+                loss_points_raw = 1.0 - prob_vals
+            elif self.probloss_cal == 'Psq': # P_squard, y = 1 - p^2
+                loss_points_raw = 1.0 - prob_vals.pow(2)
+            elif self.probloss_cal == 'NLL': # Negative Log Likelihood, y = - log(p)
+                loss_points_raw = -torch.log(prob_vals.clamp_min(eps))
+            elif self.probloss_cal == 'Squard': # Squard, y = (1 - p)^2
+                loss_points_raw = ((1.0 - prob_vals).pow(2))
+            elif self.probloss_cal == 'Focal': # Focal, y = (1 - p)^γ * log(p)
+                gamma = 2.0
+                loss_points_raw = - (1.0 - prob_vals).pow(gamma) * torch.log(prob_vals.clamp_min(eps))
+            
+            # scale factor & shape adjustment
+            loss_points_raw = loss_points_raw.unsqueeze(1).expand(-1, 2) * 0.05
         else:
             loss_points_raw = F.smooth_l1_loss(src_points, target_points, reduction='none')
 
@@ -1182,25 +1127,6 @@ class SetCriterion(nn.Module):
     
     def loss_maps(self, outputs, targets, indices, num_points, **kwargs):
         criterion = nn.MSELoss(reduction='mean').cuda()
-        
-        # idx = self._get_src_permutation_idx(indices)
-        # src_points = outputs['pred_points'][idx]
-        
-        # batch_indices = []  # which image in batch this point came from
-        # for i, (src_idx, _) in enumerate(indices):
-        #     batch_indices.extend([i] * len(src_idx))
-        # batch_indices = torch.tensor(batch_indices, device=src_points.device)
-        # target_points = torch.cat([t['points'][i] for t, (_, i) in zip(targets, indices)], dim=0)
-        # img_shape = outputs['img_shape']
-        # img_h, img_w = img_shape
-        # target_points[:, 0] /= img_h
-        # target_points[:, 1] /= img_w
-        
-        # # prob = kwargs['prob']
-        # gt_prob_map = build_density_map_from_points_with_kdtree(
-        #         target_points, batch_indices, img_h, img_w, device=src_points.device
-            # )
-        # gt_prob_map = kwargs['prob']
         img_shape = outputs['img_shape']
         img_h, img_w = img_shape
         gt_prob_map = generate_prob_map_from_points(targets, img_h, img_w)
