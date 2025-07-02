@@ -14,6 +14,7 @@ from scipy.spatial import KDTree
 from models.transformer.utils import query_partition
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from typing import List, Optional
 
 import numpy as np
 from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
@@ -39,7 +40,7 @@ class QuadtreeSplitterWithAttention(nn.Module):
         self.hidden_dim = hidden_dim
         
         # Attention Layer
-        self.attention = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=nhead, dropout=0.1)
+        self.attn = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=nhead, dropout=0.0, batch_first=True)
 
         # Fully connected projection to match output dimension
         self.fc_out = nn.Sequential(
@@ -47,54 +48,50 @@ class QuadtreeSplitterWithAttention(nn.Module):
             nn.Sigmoid()
         )
         
-    def forward(self, src, pos, mask, train_flag):
-            """
-            Args:
-                src: Input feature map of shape [batch_size, hidden_dim, height, width]
-                pos: Positional encoding of shape [batch_size, hidden_dim, height, width]
-            Returns:
-                Output of shape [batch_size, 1, pooled_height, pooled_width]
-            """
-            batch_size, hidden_dim, height, width = src.shape
-            
-            # Add positional encoding
-            src_with_pos = src + pos 
+    def forward(
+        self,
+        src:  torch.Tensor,      # (B,C,H,W)
+        pos:  torch.Tensor,      # (B,C,H,W)
+        mask: Optional[torch.Tensor],   # (B,1,H,W) or (B,H,W); False=valid, True=invalid
+        train_flag=None
+    ) -> torch.Tensor:
+        B, C, H, W = src.shape
+        src_with_pos = src + pos                             # (B,C,H,W)
 
-            pooled_src = F.avg_pool2d(src, kernel_size=(self.context_h, self.context_w), stride=(self.context_h, self.context_w))
-            pooled_src_with_pos = F.avg_pool2d(src_with_pos, kernel_size=(self.context_h, self.context_w), stride=(self.context_h, self.context_w))
-            pooled_h, pooled_w = pooled_src.shape[-2], pooled_src.shape[-1]
+        # ---------- reshape to (B, N, C) ----------
+        tokens_q = src.flatten(2).permute(0, 2, 1)           # (B, N, C) N=H*W
+        tokens_kv = src_with_pos.flatten(2).permute(0, 2, 1) # (B, N, C)
 
-            pooled_src = pooled_src.permute(0, 2, 3, 1).reshape(-1, pooled_h * pooled_w, hidden_dim).permute(1, 0, 2)  # Query
-            pooled_src_with_pos = pooled_src_with_pos.permute(0, 2, 3, 1).reshape(-1, pooled_h * pooled_w, hidden_dim).permute(1, 0, 2)  # Key & Value
-            
-            # mask_win = (?)  # got bug here
-            if mask is not None and not train_flag:
-                if mask.dim() == 3:
-                    mask = mask.unsqueeze(1)  # [B,1,H,W]
-                mask_float = mask.float()
-                with torch.no_grad():
-                    mask_win = F.avg_pool2d(
-                            mask_float, 
-                            kernel_size=(self.context_h, self.context_w),
-                            stride=(self.context_h, self.context_w)
-                        )
-                mask_win = (mask_win < 1.0).squeeze(1)  # [B, pooled_h, pooled_w]
-                mask_win = mask_win.view(batch_size, -1) # [B, pooled_h*pooled_w].permute?
-            else:
-                mask_win = None
-                
-            attn_output, _ = self.attention(query = pooled_src, 
-                                            key = pooled_src_with_pos, 
-                                            value = pooled_src_with_pos,
-                                            attn_mask = None,
-                                            key_padding_mask = mask_win) #mask_win) #mask_win)
-            attn_output = attn_output.permute(1, 0, 2)  # [batch_size, pooled_h * pooled_w, hidden_dim]
+        # ---------- build key_padding_mask ----------
+        if mask is not None:
+            if mask.dim() == 4:
+                mask = mask.squeeze(1)                       # (B,H,W)
+            key_padding_mask = mask.flatten(1).bool()        # True=skip
+            all_masked = key_padding_mask.all(dim=1, keepdim=True)
+            key_padding_mask = key_padding_mask.masked_fill(all_masked, False)
+        else:
+            key_padding_mask = None
 
-            # Project back to desired output dimension
-            attn_output = self.fc_out(attn_output)  # [batch_size, pooled_h * pooled_w, 1]
-            attn_output = attn_output.reshape(batch_size, 1, pooled_h, pooled_w)  # Reshape to [batch_size, 1, pooled_h, pooled_w]
+        # ---------- attention on full resolution ----------
+        attn_out, _ = self.attn(
+            query=tokens_q,
+            key=tokens_kv,
+            value=tokens_kv,
+            key_padding_mask=key_padding_mask
+        )                                                    # (B,N,C)
 
-            return attn_output
+        # ---------- 1-channel projection ----------
+        proj = self.fc_out(attn_out)                         # (B,N,1)
+        proj = proj.transpose(1, 2).reshape(B, 1, H, W)      # (B,1,H,W)
+
+        # ---------- *now* do pooling --------------- ### ← changed
+        pooled = F.avg_pool2d(
+            proj,
+            kernel_size=(self.context_h, self.context_w),
+            stride=(self.context_h, self.context_w)
+        )                                                    # (B,1,Hp,Wp)
+
+        return pooled
 
 class Conv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, padding, stride=1, relu=True, bn=False):
@@ -619,9 +616,6 @@ class PET(nn.Module):
         # backbone
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
-            
-        if 'test' in kwargs:
-            flag = 0
         features, pos = self.backbone(samples) 
         #  sample.tensors shape[bs, 3, patch_size]                       VGG 64/32
         #  features.tensors/pos shape: ['4x':BCHW, '8x':BCHW] [4x/8x: bs, c, 32/16, 32/16]
@@ -630,7 +624,6 @@ class PET(nn.Module):
         # kwargs['prob_map']=prob_map
         
         # prob map in feature
-
         if 'train' in kwargs and self.prob_map_lc == 'f4x':
             prob_map = self.prob_conv(features['4x'].tensors)
             H, W = samples.tensors.shape[-2], samples.tensors.shape[-1]

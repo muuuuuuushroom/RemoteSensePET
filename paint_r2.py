@@ -6,10 +6,10 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score, mean_absolute_error
 from scipy.stats import pearsonr, linregress
 
-folder_path = '/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/vis_ckpt172'
+folder_path = '/data/zlt/RemoteSensePET/outputs/rtc_s/WuhanMetro/t_attnsplit_boxquery_mixedloss_contxt128_refinedata/vis/gt_nac'
 
 left=0
-right=1000
+right=35
 
 all_gt = []
 all_pred = []
@@ -40,9 +40,9 @@ for filename in os.listdir(folder_path):
 all_gt = np.array(all_gt).astype(float)
 all_pred = np.array(all_pred).astype(float)
 
-df_results = pd.DataFrame(results)
-excel_output_path = '/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/r2/file_gt_pred_data.xlsx'
-df_results.to_excel(excel_output_path, index=False)
+# df_results = pd.DataFrame(results)
+# excel_output_path = '/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/r2/file_gt_pred_data.xlsx'
+# df_results.to_excel(excel_output_path, index=False)
 
 # 确保我们有足够的数据点来计算统计量
 if len(all_gt) > 0 and len(all_pred) > 0:
@@ -91,4 +91,4 @@ if len(all_gt) > 0 and len(all_pred) > 0:
             bbox=dict(facecolor='none', edgecolor='none')) 
 
     # 显示图形
-    plt.savefig(f'/data/zlt/RemoteSensePET/outputs/SOY/s_noencoder_dist/r2/point_{left}_t_{right}.pdf')
+    plt.savefig(f'point_{left}_t_{right}.pdf')

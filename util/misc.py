@@ -9,7 +9,7 @@ import time
 from collections import defaultdict, deque
 import datetime
 import pickle
-from typing import Optional, List
+from typing import Optional, List, Sequence
 
 import torch
 import torch.distributed as dist

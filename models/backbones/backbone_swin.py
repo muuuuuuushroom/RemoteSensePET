@@ -172,7 +172,11 @@ class BackboneBase_Swin(nn.Module):
             features_fpn = self.fpn([feats[1], feats[2], feats[3]])
             features_fpn_4x = features_fpn[0]
             features_fpn_8x = features_fpn[1]
-
+            
+            # scale debug: stride
+            # features_fpn_4x = F.interpolate(features_fpn_4x, scale_factor=2, mode="bilinear", align_corners=False)
+            # features_fpn_8x = F.interpolate(features_fpn_8x, scale_factor=2, mode="bilinear", align_corners=False)
+            
             # generate prob map
             # prob_map = self.prob_conv(features_fpn_4x)
             # H, W = tensor_list.tensors.shape[2], tensor_list.tensors.shape[3]

@@ -104,6 +104,15 @@ class WinEncoderTransformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
     
+    def sanitize_mask(self, attn_mask: torch.Tensor) -> torch.Tensor:
+        if attn_mask.ndim == 2:            # (B_win, L)
+            full = attn_mask.all(dim=-1)    # (B_win, )
+            attn_mask[full, -1] = False
+        elif attn_mask.ndim == 3:          # (B_win, L, L)
+            full = attn_mask.all(dim=-1).all(dim=-1)
+            attn_mask[full, :, -1] = False
+        return attn_mask
+    
     def forward(self, src, pos_embed, mask):
         bs, c, h, w = src.shape
         
@@ -115,6 +124,7 @@ class WinEncoderTransformer(nn.Module):
             memeory_win, pos_embed_win, mask_win  = enc_win_partition(memeory, pos_embed, mask, enc_win_h, enc_win_w)  # (HW)(BN)C          
 
             # encoder forward
+            mask_win = self.sanitize_mask(mask_win)
             output = self.encoder.single_forward(memeory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx)
 
             # reverse encoder window
@@ -180,8 +190,8 @@ class WinDecoderTransformer(nn.Module):
         _, points_queries, _, _, _ = kwargs['pqs']
         
         # useless?:
-        points_queries_win = query_partition(points_queries, query_feats, dec_win_h, dec_win_w)
-        kwargs['pq_w'] = points_queries_win
+        # points_queries_win = query_partition(points_queries, query_feats, dec_win_h, dec_win_w)
+        # kwargs['pq_w'] = points_queries_win
         
         # if self.opt_query_decoder:
         #     refbox_win = query_partition(kwargs['refbox'], query_feats, dec_win_h, dec_win_w)

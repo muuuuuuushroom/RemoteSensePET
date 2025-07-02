@@ -86,7 +86,7 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
-        model_without_ddp.load_state_dict(checkpoint['model'])
+        model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
         print(f"load successfully from ckpt: {args.resume}")
         cur_epoch = checkpoint['epoch'] - 1 if 'epoch' in checkpoint else 0
 

@@ -4,8 +4,8 @@ import torchvision
 from .SHA import build as build_sha
 from .RTC import build_rtc
 from .CARPK import build as build_rsc
-from .WuhanMetro_new import build_whm
-
+# from .WuhanMetro_new import build_whm
+from .WuhanMetro import build_whm
 from .CORN import build as build_corn
 from .SOY import build_soy
 

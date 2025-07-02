@@ -284,6 +284,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
     model.eval()
 
     gt_determined = 1 if args.dataset_file == 'WuhanMetro' else 100
+    # gt_determined = 100
     metric_logger = utils.MetricLogger(delimiter="  ", win_size=len(data_loader))
     header = 'Test:'
 
@@ -455,7 +456,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
     results["mse_ac"] = np.sqrt(results["mse_ac"])
     
     # print(len(gt_cnt_array), len(pd_cnt_array))
-    results["r2"] = r2_score(gt_cnt_array, pd_cnt_array)
+    results["r2"] = r2_score(gt_cnt_array, pd_cnt_array) if args.dataset_file != 'WuhanMetro' else r2_score(gt_cnt_array_ac, pd_cnt_array_ac)
     results["r2_ac"] = r2_score(gt_cnt_array_ac, pd_cnt_array_ac)
     # results["rmae"], results["rmse"] = metrics.compute_relerr(
     #     gt_cnt_array, pd_cnt_array

@@ -23,7 +23,7 @@ from util.custom_log import *
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
-    parser.add_argument('--cfg', type=str, default='configs_con/vgg.yaml', 
+    parser.add_argument('--cfg', type=str, default='configs_con/swin.yaml', 
                         help='base cfg file for training model')
     
     parser.add_argument('--save_ckpt_freq', type=int, default=500,
@@ -229,7 +229,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    import multiprocessing
+    # import multiprocessing
     # multiprocessing.set_start_method('spawn', force=True)
     # torch.cuda.empty_cache()
     
