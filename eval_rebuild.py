@@ -120,9 +120,6 @@ def main(args):
         else:
             print(k,'\t', v)
         count += 1
-    
-        
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('PET evaluation script', parents=[get_args_parser()])
@@ -131,5 +128,16 @@ if __name__ == '__main__':
     args = update_args_with_config(args, config)
     
     args.opt_query_con = False if not hasattr(args, 'opt_query_con') else args.opt_query_con
+    if hasattr(args, 'one_key_hfy'):
+        if args.one_key_hfy == True:
+            args.use_spatial_attention=True
+            args.use_arc=True
+            args.upsample_strategy='dysample' # dysample, bilinear
+            args.fpn_type='panet'  # panet, original
+    else:
+        args.use_spatial_attention=False
+        args.use_arc=False
+        args.upsample_strategy='bilinear' # dysample, bilinear
+        args.fpn_type='original'  # panet, original
     
     main(args)

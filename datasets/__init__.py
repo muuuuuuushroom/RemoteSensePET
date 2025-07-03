@@ -5,14 +5,14 @@ from .SHA import build as build_sha
 from .RTC import build_rtc
 from .CARPK import build as build_rsc
 # from .WuhanMetro_new import build_whm
-from .WuhanMetro import build_whm
+from .WuhanMetro_v2 import build_whm
 from .CORN import build as build_corn
 from .SOY import build_soy
 
 data_path = {
     'SHA': 'data/Crowd_Counting/ShanghaiTech/part_A_final/',
     'SHB': 'data/Crowd_Counting/ShanghaiTech/part_B_final/',
-    'WuhanMetro': 'data/WuhanMetroCount',
+    'WuhanMetro': 'data/MetroV2',
     'RTC': '/data/zlt/PET/RTC/data/RTC',
     
     'People': 'data/People',

@@ -44,6 +44,9 @@ def get_args_parser():
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
+    # parser.add_argument('--one_key_hfy', default=False)
+    # parser.add_argument('--one_key_zlt', default=False)
+    
     return parser
 
 
@@ -109,8 +112,8 @@ def main(args):
             output_dir = os.path.join("./outputs/rsc", args.dataset_file, args.output_dir)
         elif args.dataset_file in ['SHA', 'SHB']:
             output_dir = os.path.join("./outputs/true_cc", args.dataset_file, args.output_dir)
-        elif args.dataset_file in ['RTC', 'WuhanMetro']:
-            output_dir = os.path.join("./outputs/rtc_s", args.dataset_file, args.output_dir)
+        # elif args.dataset_file in ['RTC', 'WuhanMetro']:
+        #     output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
         else:
             output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
         os.makedirs(output_dir, exist_ok=True)
@@ -238,5 +241,15 @@ if __name__ == '__main__':
     
     config = load_config(args.cfg)
     args = update_args_with_config(args, config)
-
+    if args.one_key_hfy:
+        args.use_spatial_attention=True
+        args.use_arc=True
+        args.upsample_strategy='dysample' # dysample, bilinear
+        args.fpn_type='panet'  # panet, original
+    if args.one_key_zlt:
+        args.opt_query_decoder=True
+        args.attn_splitter=True
+        args.loss_f='prob' # gaussion_l2, prob, normal
+        args.prob_map_lc='f4x' # f4x, None
+    
     main(args)
