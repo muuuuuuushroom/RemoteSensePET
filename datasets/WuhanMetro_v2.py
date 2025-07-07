@@ -109,7 +109,7 @@ class WuhanMetro(Dataset):
         # points = self.parse_json(gt_path)
 
         if self.train:
-            scale_range = [0.6, 1.8] #[0.6, 1.8] # [0.5, 0.8]
+            scale_range = [0.5, 2.0] #[0.6, 1.8] # [0.5, 0.8]
             min_size = min(img.shape[1:])
             scale = random.uniform(*scale_range)
             
@@ -122,6 +122,10 @@ class WuhanMetro(Dataset):
         # random crop patch
         if self.train:
             img, points = self.random_crop(img, points, patch_size=self.patch_size)
+        # no random crop
+        # points = points.astype(np.float32).copy()
+        # if np.isnan(points).any():
+        #     raise ValueError("random_crop: NaN detected in points.")
             
         # random flip horizontal
         if random.random() > 0.5 and self.train and self.flip:

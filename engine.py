@@ -35,10 +35,16 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
     """
     box_flag = False
     
-    vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
-    vis_dir_nac = os.path.join(vis_dir, 'gt_nac')
-    os.makedirs(vis_dir_ac, exist_ok=True)
-    os.makedirs(vis_dir_nac, exist_ok=True)
+    if args.dataset_file != 'WuhanMetro':
+        vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
+        vis_dir_nac = os.path.join(vis_dir, 'gt_nac')
+        os.makedirs(vis_dir_ac, exist_ok=True)
+        os.makedirs(vis_dir_nac, exist_ok=True)
+    else:
+        vis_dir_ac = vis_dir
+        vis_dir_nac = vis_dir
+        os.makedirs(vis_dir + '/3-1', exist_ok=True)
+        os.makedirs(vis_dir + '/3-2', exist_ok=True)
     
     if box_flag:
         vis_dir_box_same = os.path.join(vis_dir, 'box_same')
@@ -182,6 +188,8 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
             valid_h, valid_w = valid_area[0][-1], valid_area[1][-1]
             sample_vis = sample_vis[: valid_h + 1, : valid_w + 1]
 
+            if args.dataset_file == 'WuhanMetro':
+                pre_name_folder = targets[idx]["image_path"].split("/")[-2]
             name = targets[idx]["image_path"].split("/")[-1].split(".")[0]
             
             if gt_cnt > 100:
@@ -193,6 +201,8 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
                     sample_vis,
                 )
             else:
+                if args.dataset_file == 'WuhanMetro':
+                    vis_dir_nac = os.path.join(vis_dir, pre_name_folder)
                 cv2.imwrite(
                     os.path.join(
                         vis_dir_nac,
@@ -288,10 +298,10 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
     metric_logger = utils.MetricLogger(delimiter="  ", win_size=len(data_loader))
     header = 'Test:'
 
-    if vis_dir is not None:
-        os.makedirs(vis_dir, exist_ok=True)
-        vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
-        os.makedirs(vis_dir_ac, exist_ok=True)
+    # if vis_dir is not None:
+        # os.makedirs(vis_dir, exist_ok=True)
+        # vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
+        # os.makedirs(vis_dir_ac, exist_ok=True)
         
     gt_cnt_all, pd_cnt_all = [], []
     gt_cnt_all_ac, pd_cnt_all_ac = [], []
@@ -443,7 +453,8 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
             )
             
             visualization(
-                samples, targets, [points], outputs_queries, vis_dir, split_map=split_map, gt_cnt=gt_cnt, args=args, outputs=outputs
+                samples, targets, [points], outputs_queries, vis_dir, 
+                split_map=split_map, gt_cnt=gt_cnt, args=args, outputs=outputs
             )
 
     # gather the stats from all processes

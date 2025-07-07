@@ -26,7 +26,7 @@ class SHA(Dataset):
         data_root,
         transform=None,
         train=False,
-        flip=False,
+        flip=True,
         global_crop_ratio=0.1,
         probs=[0.05, 0.5, 1e-4],
         total_steps=1000,
@@ -64,7 +64,7 @@ class SHA(Dataset):
         self.transform = transform
         self.train = train
         self.flip = flip
-        self.patch_size = 256
+        self.patch_size = args.patch_size
         
         self.category=category
         self.test_str=args.eval_pad
@@ -135,7 +135,7 @@ class SHA(Dataset):
 
         # # random scale?
         if self.train:
-            scale_range = [0.3, 0.7]
+            scale_range = [0.7, 1.3]
             min_size = min(img.shape[1:])
             scale = random.uniform(*scale_range)
 

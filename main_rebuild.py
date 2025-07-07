@@ -109,7 +109,7 @@ def main(args):
     # output directory and log 
     if utils.is_main_process:
         if args.dataset_file in ['People', 'Ship', 'Car']:
-            output_dir = os.path.join("./outputs/rsc", args.dataset_file, args.output_dir)
+            output_dir = os.path.join("./outputs/TGRS", args.dataset_file, args.output_dir)
         elif args.dataset_file in ['SHA', 'SHB']:
             output_dir = os.path.join("./outputs/true_cc", args.dataset_file, args.output_dir)
         # elif args.dataset_file in ['RTC', 'WuhanMetro']:
@@ -126,7 +126,7 @@ def main(args):
             log_file.write("parameters: {}\n".format(n_parameters))
 
     # resume
-    best_mae, best_epoch = 1e8, 0
+    best_mae, best_epoch, best_r2 = 1e8, 0, -1e8
     if args.resume:
         print(f'resume from: {args.resume}')
         if args.resume.startswith('https'):
@@ -203,6 +203,21 @@ def main(args):
             if mae < best_mae:
                 best_epoch = epoch
                 best_mae = mae
+            if args.dataset_file == 'WuhanMetro':
+                if r2 > best_r2:
+                    best_r2 = r2
+                    if utils.is_main_process():
+                        checkpoint_paths = [output_dir / f'best_r2_checkpoint.pth']
+                        for checkpoint_path in checkpoint_paths:
+                            utils.save_on_master({
+                                'model': model_without_ddp.state_dict(),
+                                'optimizer': optimizer.state_dict(),
+                                'lr_scheduler': lr_scheduler.state_dict(),
+                                'epoch': epoch+1,
+                                'args': args,
+                                'best_mae': best_mae,
+                                'best_epoch': best_epoch
+                            }, checkpoint_path)
             print("\n==========================")
             print("\nepoch:", epoch, "mae:", mae, "mse:", mse, "r2", r2, "\n\nbest mae:", best_mae, "best epoch:", best_epoch)
             print("\n==========================\n")
