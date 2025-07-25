@@ -151,17 +151,17 @@ class SHA(Dataset):
         img_ = np.transpose(img_, (1, 2, 0))
         
         if self.train:
-            if self.prob_map_lc == 'f4x':
-                h5_path = img_path.replace('train_data', 'prob_map_dyna_SAE').replace('.jpg', '.h5').replace('.png', '.h5')
-                with h5py.File(h5_path, 'r') as hf:
-                    probability = np.array(hf['density'])
-                    # probability = torch.from_numpy(density).float().unsqueeze(0)  # [1, H, W]
-                    probability = probability.float().unsqueeze(0) if isinstance(probability, torch.Tensor) else torch.from_numpy(probability).float().unsqueeze(0)
-            else:
-                probability = None
+        #     if self.prob_map_lc == 'f4x':
+        #         h5_path = img_path.replace('train_data', 'prob_map_dyna_SAE').replace('.jpg', '.h5').replace('.png', '.h5')
+        #         with h5py.File(h5_path, 'r') as hf:
+        #             probability = np.array(hf['density'])
+        #             # probability = torch.from_numpy(density).float().unsqueeze(0)  # [1, H, W]
+        #             probability = probability.float().unsqueeze(0) if isinstance(probability, torch.Tensor) else torch.from_numpy(probability).float().unsqueeze(0)
+        #     else:
+        #         probability = None
                 
             img, points, bboxs, prob_crop = random_crop(
-                img, points, bboxs, patch_size=self.patch_size, probability=probability
+                img, points, bboxs, patch_size=self.patch_size, probability=None
             )
             
         else:
@@ -184,8 +184,8 @@ class SHA(Dataset):
 
         if random.random() > 0.5 and self.train and self.flip:
             img = torch.flip(img, dims=[2])
-            if self.prob_map_lc == 'f4x':
-                prob_crop = torch.flip(prob_crop, dims=[2])
+            # if self.prob_map_lc == 'f4x':
+            #     prob_crop = torch.flip(prob_crop, dims=[2])
             points[:, 1] = self.patch_size - points[:, 1]
 
         # target

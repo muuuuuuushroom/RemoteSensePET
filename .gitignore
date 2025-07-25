@@ -5,6 +5,7 @@ outputs
 cache
 tools
 configs_con
+configs_TGRS
 models/backbones/vgg.py
 
 __pycache__/

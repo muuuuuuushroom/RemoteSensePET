@@ -23,10 +23,10 @@ from util.custom_log import *
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set Point Query Transformer', add_help=False)
-    parser.add_argument('--cfg', type=str, default='configs_con/swin.yaml', 
+    parser.add_argument('--cfg', type=str, default='configs_con/TGRS/Ship.yaml', 
                         help='base cfg file for training model')
     
-    parser.add_argument('--save_ckpt_freq', type=int, default=500,
+    parser.add_argument('--save_ckpt_freq', type=int, default=1000,
                         help="the frequency to save ckpt")
     # misc parameters
     parser.add_argument('--device', default='cuda',
@@ -180,6 +180,18 @@ def main(args):
                     'best_mae': best_mae,
                     'best_epoch': best_epoch
                 }, checkpoint_path)
+        
+        # checkpoint_paths = [output_dir / f'latest_checkpoint_{epoch+1}.pth']
+        # for checkpoint_path in checkpoint_paths:
+        #     utils.save_on_master({
+        #         'model': model_without_ddp.state_dict(),
+        #         'optimizer': optimizer.state_dict(),
+        #         'lr_scheduler': lr_scheduler.state_dict(),
+        #         'epoch': epoch+1,
+        #         'args': args,
+        #         'best_mae': best_mae,
+        #         'best_epoch': best_epoch
+        #     }, checkpoint_path)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch,

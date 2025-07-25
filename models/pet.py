@@ -21,6 +21,7 @@ from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
                        get_world_size, is_dist_avail_and_initialized)
 
 from .matcher import build_matcher
+from .stable_matcher import build_stable_matcher
 from .backbones import *
 from .transformer import *
 from .position_encoding import build_position_encoding
@@ -31,6 +32,13 @@ def inverse_sigmoid(x, eps=1e-3):
     x1 = x.clamp(min=eps)
     x2 = (1 - x).clamp(min=eps)
     return torch.log(x1/x2)
+
+def inverse_sigmoid_both(x, eps=1e-3):
+    x = x.clamp(min=0, max=1)
+    x1 = x.clamp(min=eps)
+    x2 = (1 - x).clamp(min=eps)
+    logits =torch.log(x1 / x2)
+    return torch.tanh(logits)
 
 class QuadtreeSplitterWithAttention(nn.Module):
     def __init__(self, hidden_dim, context_h, context_w, nhead=4):
@@ -149,6 +157,11 @@ class BasePETCount(nn.Module):
             dec_w, dec_h = self.dec_win_size
             self.norm_dec = [size / self.patch_size for size in self.dec_win_size]
             self.refloc_embed = nn.Embedding(dec_w*dec_h, 2) 
+            
+            if not hasattr(args, 'box_setting'):
+                self.box_setting = 1
+            else:
+                self.box_setting = args.box_setting
             
             # self.bbox_embed = MLP(hidden_dim, hidden_dim, 2, 3)
             # self.transformer.decoder.bbox_embed = self.bbox_embed
@@ -863,16 +876,17 @@ def generate_prob_map_from_points(targets, img_h, img_w, device='cuda', alpha=0.
     if len(all_points) == 0:
         return torch.zeros((1, img_h, img_w), dtype=torch.float32, device=device)
 
+    # Handle the edge case where there's only one point
+    #  If only one point, k-NN is not possible, we can use a fallback sigma directly.
+    #  Dynamically set k: it's the smaller of 4 and the number of points.
+    
     # Create a KDTree to compute distances between points
     tree = KDTree(all_points)
-    distances, locations = tree.query(all_points, k=4)
+    distances, locations = tree.query(all_points, k=min(4, len(all_points)))
 
     # Initialize an empty density map
     density = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
 
-    # for i, pt in enumerate(all_points):
-        # Convert point coordinates to integers
-        # x, y = int(pt[0]), int(pt[1])
     for i, pt in enumerate(all_points):
         # floor-int-clamp
         x = int(np.floor(pt[0]))
@@ -1220,7 +1234,10 @@ def build_pet(args):
     )
 
     # build loss criterion
-    matcher = build_matcher(args)
+    if not hasattr(args, 'matcher'):
+        matcher = build_matcher(args)
+    else:
+        matcher = build_stable_matcher(args) if args.matcher == 'stable' else build_matcher(args)
     if args.prob_map_lc == 'f4x':
         weight_dict = {'loss_ce': args.ce_loss_coef, 
                     'loss_points': args.point_loss_coef,

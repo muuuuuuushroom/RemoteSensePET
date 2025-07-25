@@ -149,6 +149,7 @@ class WinDecoderTransformer(nn.Module):
                  # anchor-detr patterns
                  num_patterns=0,
                  opt_query_con=False, 
+                 box_setting=1,
                  ):
         super().__init__()
         decoder_layer = DecoderLayer(d_model, nhead, dim_feedforward,
@@ -160,7 +161,8 @@ class WinDecoderTransformer(nn.Module):
                                             return_intermediate=return_intermediate_dec,
                                             d_model=d_model, nhead=nhead, 
                                             opt_query_decoder=opt_query_decoder,
-                                            opt_query_con=opt_query_con)
+                                            opt_query_con=opt_query_con,
+                                            box_setting=box_setting)
         self._reset_parameters()
 
         self.dec_win_w, self.dec_win_h = dec_win_w, dec_win_h
@@ -430,7 +432,8 @@ class TransformerDecoder(nn.Module):
     Base Transformer Decoder
     """
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False,
-                 d_model=256, nhead=8, opt_query_decoder=False, opt_query_con=False):
+                 d_model=256, nhead=8, opt_query_decoder=False, opt_query_con=False,
+                 box_setting=1):
         super().__init__()
         self.layers = _get_clones(decoder_layer, num_layers)
         self.num_layers = num_layers
@@ -454,6 +457,8 @@ class TransformerDecoder(nn.Module):
             
             # self.offset_generator = FeatureDependentOffset(d_model, nhead)
             self.init_offset_generator = MLP(d_model, d_model, 2, 3)
+            
+            self.box_setting = box_setting
 
             for layer_id in range(num_layers - 1):
                 self.layers[layer_id + 1].ca_qpos_proj = None
@@ -549,7 +554,9 @@ class TransformerDecoder(nn.Module):
         intermediate = []
         query_pos_2d = self.init_offset_generator(query_pos.reshape(-1, self.d_model))
         nums, new_bs, dimen = box_unsigmoid.shape
-        query_pos_2d = query_pos_2d.reshape(nums, new_bs, dimen) 
+        query_pos_2d = query_pos_2d.reshape(nums, new_bs, dimen) # query_pos_2d -1~1
+        if self.box_setting == 2: # try to convert qp to 0-1
+            query_pos_2d = 0.5 * query_pos_2d + 0.5
         # query_pos_2d = (query_pos_2d.sigmoid() - 0.5) * 2.0
         box = query_pos_2d
         

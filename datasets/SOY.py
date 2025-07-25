@@ -122,16 +122,16 @@ class SOY(Dataset):
 
 
         # random scale
-        # if self.train:
-        #     scale_range = [0.8, 1.2]
-        #     min_size = min(img.shape[1:])
+        if self.train:
+            scale_range = [0.8, 1.2]
+            min_size = min(img.shape[1:])
 
-        #     scale = random.uniform(*scale_range)
+            scale = random.uniform(*scale_range)
             
-        #     # interpolation
-        #     if scale * min_size > self.patch_size:
-        #         img = torch.nn.functional.upsample_bilinear(img.unsqueeze(0), scale_factor=scale).squeeze(0)
-        #         points *= scale
+            # interpolation
+            if scale * min_size > self.patch_size:
+                img = torch.nn.functional.upsample_bilinear(img.unsqueeze(0), scale_factor=scale).squeeze(0)
+                points *= scale
 
         # random crop patch
         if self.train:
@@ -154,7 +154,7 @@ class SOY(Dataset):
         if not self.train:
             target['image_path'] = img_path
 
-        return img, target
+        return img, target, None
     
     @staticmethod
     def re_onecycle_prob(initial_prob, max_prob, final_prob, total_steps, pct_start=0.3, anneal_strategy='cos'):

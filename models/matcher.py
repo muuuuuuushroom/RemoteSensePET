@@ -65,7 +65,7 @@ class HungarianMatcher(nn.Module):
         # compute the L2 cost between points
         img_h, img_w = outputs['img_shape']
         out_points_abs = out_points.clone()
-        device = out_points_abs.device
+        # device = out_points_abs.device
         
         out_points_abs[:,0] *= img_h
         out_points_abs[:,1] *= img_w
@@ -98,12 +98,12 @@ if __name__ == "__main__":
     macher = HungarianMatcher()
 
     outputs = {
-        'pred_points': torch.rand((8, 4096, 2)),
-        'pred_logits': torch.rand(8, 4096, 2),
-        'img_shape': (512, 512)
+        'pred_points': torch.rand((1, 8, 2)),
+        'pred_logits': torch.rand(1, 8, 2),
+        'img_shape': (24, 24)
     }
 
-    targets = [{'points':torch.rand(36, 2), 'labels':torch.ones(36, dtype=torch.int64)} for i in range(8)]
+    targets = [{'points':torch.rand(3, 2), 'labels':torch.ones(3, dtype=torch.int64)} for i in range(1)]
     import time
     st = time.time()
     indice = macher(outputs, targets)
