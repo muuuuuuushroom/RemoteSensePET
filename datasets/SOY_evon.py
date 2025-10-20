@@ -16,6 +16,76 @@ sys.path.append('./')
 sys.path.append('./models')
 import util.misc as utils
 
+from typing import Iterable, Any
+from pathlib import Path
+import numpy as np
+
+from typing import Union
+from pathlib import Path
+
+def load_np_basename_ci(path, *args, **kwargs):
+    p = Path(path)
+    # 正常存在就直接读
+    if p.exists():
+        return np.load(p, *args, **kwargs)
+
+    if not p.suffix:
+        raise FileNotFoundError(f"缺少扩展名：{p}. 请带上 .npy 或 .npz")
+
+    parent = p.parent if str(p.parent) != "" else Path(".")
+    stem_cf = p.stem.casefold()   # 仅对 basename 做 case-insensitive
+    ext = p.suffix                # 扩展名必须精确相同（区分大小写）
+
+    # 在同一目录下寻找：basename 忽略大小写，扩展名严格相同
+    candidates = [
+        f for f in parent.iterdir()
+        if f.is_file() and f.suffix == ext and f.stem.casefold() == stem_cf
+    ]
+
+    if len(candidates) == 1:
+        return np.load(candidates[0], *args, **kwargs)
+    elif len(candidates) == 0:
+        raise FileNotFoundError(
+            f"找不到文件（仅忽略 basename 大小写）：{p}\n"
+            f"已在目录 {parent} 下按扩展名 {ext} 搜索。"
+        )
+    else:
+        raise RuntimeError(
+            "发现多个仅大小写不同的同名文件，存在歧义：\n" +
+            "\n".join(f" - {c}" for c in candidates)
+        )
+        
+
+def _resolve_basename_ci(path: Union[str, Path]) -> Path:
+    p = Path(path)
+    if p.exists():
+        return p
+
+    if not p.suffix:
+        raise FileNotFoundError(f"缺少扩展名：{p}，请带上 .json")
+
+    parent = p.parent if str(p.parent) != "" else Path(".")
+    stem_cf = p.stem.casefold()
+    ext = p.suffix  # 扩展名严格匹配大小写
+
+    candidates = [
+        f for f in parent.iterdir()
+        if f.is_file() and f.suffix == ext and f.stem.casefold() == stem_cf
+    ]
+
+    if len(candidates) == 1:
+        return candidates[0]
+    elif len(candidates) == 0:
+        raise FileNotFoundError(
+            f"找不到文件（仅忽略 basename 大小写）：{p}\n"
+            f"已在目录 {parent} 下按扩展名 {ext} 搜索。"
+        )
+    else:
+        raise RuntimeError(
+            "发现多个仅大小写不同的同名 JSON 文件，存在歧义：\n" +
+            "\n".join(f" - {c}" for c in candidates)
+        )
+
 class SOY(Dataset):
     def __init__(
         self, 
@@ -33,10 +103,10 @@ class SOY(Dataset):
         self.root_path = data_root
         
         # dataset_type = "distribution/train_list" if train else "distribution/test_list"
-        dataset_type = "random_dis/train_ran" if train else "random_dis/test_ran"
+        # dataset_type = "train_dis" if train else "test_dis"
         # dataset_type = "train" if train else "test"
-        data_list_path = os.path.join(data_root, dataset_type+'.txt')
-        self.data_list = [name.split(' ') for name in open(data_list_path).read().splitlines()]
+        data_list_path = f'/data/zlt/RemoteSensePET/data/soy_ev_new/soybean_testset/images'
+        self.data_list = [[os.path.join(dirpath, f)] for dirpath, _, files in os.walk(data_list_path) for f in files]
         self.nSamples = len(self.data_list)
 
         self.transform = transform
@@ -105,13 +175,14 @@ class SOY(Dataset):
         assert index <= len(self), 'index range error'
 
         # load image and gt points
-        img_path = os.path.join(self.root_path, self.data_list[index][0])
+        img_path = self.data_list[index][0]
         npy_path = img_path.replace('images/', 'images_npy/').replace('.jpg', '.npy')
-        gt_path = os.path.join(self.root_path, self.data_list[index][1])
+        
         # img = Image.open(img_path); img = np.array(img).transpose(2,0,1).astype(np.float32); 
         # print(img.shape)
-        img = np.load(npy_path)
-        points = self.parse_json(gt_path)
+        # img = np.load(npy_path)
+        img = load_np_basename_ci(npy_path)
+        
 
         # img = cv2.resize(img, (512, 512))
         # points *= 512 / 2816
@@ -135,27 +206,16 @@ class SOY(Dataset):
                 points *= scale
 
         # random crop patch
-        if self.train:
-            img, points = self.random_crop(img, points, patch_size=self.patch_size, ratio=self.global_sample_ratio)
-
         # random flip horizontal
-        if random.random() > 0.5 and self.train and self.flip:
-            img = torch.flip(img, dims=[2])
-            points[:, 0] = self.patch_size - points[:, 0]
+
 
         # target
         target = {}
-        target['points'] = torch.from_numpy(points[:,::-1].copy())  # XY->HW due to query points are in a format of HW
-        target['labels'] = torch.ones([points.shape[0]]).long()
-
-        if self.train:
-            density = self.compute_density(points)
-            target['density'] = density
 
         if not self.train:
             target['image_path'] = img_path
 
-        return img, target, None
+        return img, img_path, None #target
     
     @staticmethod
     def re_onecycle_prob(initial_prob, max_prob, final_prob, total_steps, pct_start=0.3, anneal_strategy='cos'):
@@ -191,9 +251,49 @@ class SOY(Dataset):
         return (end - start) * pct + start
 
     @staticmethod
-    def parse_json(gt_path):
-        with open(gt_path, 'r') as f:
-            tree = json.load(f)
+    def parse_json_basename_ci(gt_path: Union[str, Path],
+                           encodings: Iterable[str] = (
+                               "utf-8", "utf-8-sig", "gb18030", "cp936", "cp950"
+                           )) -> Any:
+        """
+        解析 JSON：
+        - 仅忽略 basename 大小写（目录/扩展名严格匹配）
+        - 依次尝试多种编码；遇到解码或 JSON 解析失败会继续尝试下一种
+        - 全部失败将抛出详细错误
+        """
+        p = _resolve_basename_ci(gt_path)
+        raw = p.read_bytes()
+
+        last_err: Exception | None = None
+        for enc in encodings:
+            try:
+                text = raw.decode(enc)           # 解码
+                return json.loads(text)          # 解析
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                last_err = e
+                continue
+
+        raise ValueError(
+            f"无法以以下编码解析 JSON：{list(encodings)}，路径：{p}\n"
+            f"最后错误：{type(last_err).__name__}: {last_err}"
+        )
+    
+    def parse_json(self, gt_path):
+        # 先尝试 UTF-8（通用）
+        # try:
+        #     with open(gt_path, 'r', encoding='utf-8') as f:
+        #         tree = json.load(f)
+        # except UnicodeDecodeError:
+        #     try:
+        #         with open(gt_path, 'r', encoding='utf-8-sig') as f:
+        #             tree = json.load(f)
+        #     except UnicodeDecodeError:
+        #         with open(gt_path, 'r', encoding='gb18030') as f:
+        #             tree = json.load(f)
+        tree = self.parse_json_basename_ci(gt_path)
+    # def parse_json(gt_path):
+    #     with open(gt_path, 'r') as f:
+    #         tree = json.load(f)
 
         points = []
         for shape in tree['shapes']:
@@ -248,13 +348,13 @@ class SOY(Dataset):
         return result_img, result_points
 
 
-def build_soy(image_set, args):
+def build_soy_evon(image_set, args):
     data_root = args.data_path
     if image_set == 'train':
-        train_set = SOY(data_root, train=True, global_crop_ratio=args.global_crop_ratio, transform=None, patch_size=args.patch_size, flip=True, total_steps=args.epochs)
+        train_set = SOY(data_root, train=True, global_crop_ratio=0.1, transform=None, patch_size=args.patch_size, flip=True, total_steps=args.epochs)
         return train_set
     elif image_set == 'val':
-        val_set = SOY(data_root, train=False, transform=None, patch_size=args.patch_size)
+        val_set = SOY(data_root, train=False, transform=None, patch_size=256)
         return val_set
     else:
         raise NotImplementedError

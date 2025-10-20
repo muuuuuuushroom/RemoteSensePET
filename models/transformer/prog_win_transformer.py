@@ -1048,6 +1048,7 @@ def build_decoder(args, **kwargs):
         attn_type=args.attn_type if hasattr(args, 'attn_type') else 'softmax',  # softmax
         opt_query_decoder=args.opt_query_decoder if hasattr(args, 'opt_query_decoder') else False,
         opt_query_con=args.opt_query_con if hasattr(args, 'opt_query_con') else False,
+        box_setting=1 if not hasattr(args, 'box_setting') else args.box_setting,
         # **kwargs  
     )
 

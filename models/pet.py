@@ -100,6 +100,53 @@ class QuadtreeSplitterWithAttention(nn.Module):
         )                                                    # (B,1,Hp,Wp)
 
         return pooled
+    
+class FirstQuadtreeSplitterWithAttention(nn.Module):
+    def __init__(self, hidden_dim, context_h, context_w, nhead=4):
+        super(FirstQuadtreeSplitterWithAttention, self).__init__()
+        self.context_h = context_h
+        self.context_w = context_w
+        self.hidden_dim = hidden_dim
+        
+        # Attention Layer
+        self.attention = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=nhead, dropout=0.1)
+
+        # Fully connected projection to match output dimension
+        self.fc_out = nn.Sequential(
+            nn.Linear(hidden_dim, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, src, pos,
+                mask: Optional[torch.Tensor],   # (B,1,H,W) or (B,H,W); False=valid, True=invalid
+                train_flag=None):
+            """
+            Args:
+                src: Input feature map of shape [batch_size, hidden_dim, height, width]
+                pos: Positional encoding of shape [batch_size, hidden_dim, height, width]
+            Returns:
+                Output of shape [batch_size, 1, pooled_height, pooled_width]
+            """
+            batch_size, hidden_dim, height, width = src.shape
+
+            # Add positional encoding
+            src_with_pos = src + pos 
+
+            pooled_src = F.avg_pool2d(src, kernel_size=(self.context_h, self.context_w), stride=(self.context_h, self.context_w))
+            pooled_src_with_pos = F.avg_pool2d(src_with_pos, kernel_size=(self.context_h, self.context_w), stride=(self.context_h, self.context_w))
+            pooled_h, pooled_w = pooled_src.shape[-2], pooled_src.shape[-1]
+
+            pooled_src = pooled_src.permute(0, 2, 3, 1).reshape(-1, pooled_h * pooled_w, hidden_dim).permute(1, 0, 2)  # Query
+            pooled_src_with_pos = pooled_src_with_pos.permute(0, 2, 3, 1).reshape(-1, pooled_h * pooled_w, hidden_dim).permute(1, 0, 2)  # Key & Value
+
+            attn_output, _ = self.attention(pooled_src, pooled_src_with_pos, pooled_src_with_pos)
+            attn_output = attn_output.permute(1, 0, 2)  # [batch_size, pooled_h * pooled_w, hidden_dim]
+
+            # Project back to desired output dimension
+            attn_output = self.fc_out(attn_output)  # [batch_size, pooled_h * pooled_w, 1]
+            attn_output = attn_output.reshape(batch_size, 1, pooled_h, pooled_w)  # Reshape to [batch_size, 1, pooled_h, pooled_w]
+
+            return attn_output
 
 class Conv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, padding, stride=1, relu=True, bn=False):
@@ -506,7 +553,10 @@ class PET(nn.Module):
         self.attn_splitter = args.attn_splitter
         if args.attn_splitter:
             print('attn splitter')
-            self.quadtree_splitter = QuadtreeSplitterWithAttention(hidden_dim, context_h, context_w)
+            if hasattr(args, 'Orattn'):
+                self.quadtree_splitter = FirstQuadtreeSplitterWithAttention(hidden_dim, context_h, context_w)
+            else:
+                self.quadtree_splitter = QuadtreeSplitterWithAttention(hidden_dim, context_h, context_w)
         else:
             self.quadtree_splitter = nn.Sequential(
                 nn.AvgPool2d((context_h, context_w), stride=(context_h ,context_w)),
@@ -724,8 +774,8 @@ class PET(nn.Module):
                 div_out[name] = out_sparse[name] if out_sparse is not None else out_dense[name]
         div_out['split_map_raw'] = outputs['split_map_raw']
         
-        if 'eval_s' in kwargs:
-            div_out['ind']=criterion.forward_ind(div_out, targets)          # RSC output_index
+        # if 'eval_s' in kwargs:
+        #     div_out['ind']=criterion.forward_ind(div_out, targets)          # RSC output_index
             
         return div_out
 

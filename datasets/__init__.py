@@ -8,6 +8,7 @@ from .CARPK import build as build_rsc
 from .WuhanMetro_v2 import build_whm
 from .CORN import build as build_corn
 from .SOY import build_soy
+from .SOY_evon import build_soy_evon
 from .NWPU import build_nwpu
 
 data_path = {
@@ -17,11 +18,13 @@ data_path = {
     'RTC': '/data/zlt/PET/RTC/data/RTC',
     
     'People': 'data/People',
-    'Ship': 'data/Ship',
+    # 'Ship': 'data/Ship',
+    'Ship': 'data/Vessel',
     'Car': 'data/Car',
     
     'CORN': '/data/zlt/PET/origin_pet/PET/data/dataset_corn',
     'SOY': '/data/zlt/RemoteSensePET/data/soybeam',
+    'SOY_evon': '/data/zlt/RemoteSensePET/data/soy_test',
     'NWPU': '/data/zlt/RemoteSensePET/data/NWPU-MOC',
 }
 
@@ -41,4 +44,6 @@ def build_dataset(image_set, args):
         return build_whm(image_set, args)
     elif args.dataset_file == 'NWPU':
         return build_nwpu(image_set, args)
+    elif args.dataset_file == 'SOY_evon':
+        return build_soy_evon(image_set, args)
     raise ValueError(f'dataset {args.dataset_file} not supported')

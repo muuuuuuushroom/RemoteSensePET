@@ -114,6 +114,8 @@ def main(args):
             output_dir = os.path.join("./outputs/true_cc", args.dataset_file, args.output_dir)
         # elif args.dataset_file in ['RTC', 'WuhanMetro']:
         #     output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
+        elif args.dataset_file == 'SOY':
+            output_dir = os.path.join("./outputs/soy_newran", args.output_dir)
         else:
             output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
         os.makedirs(output_dir, exist_ok=True)
