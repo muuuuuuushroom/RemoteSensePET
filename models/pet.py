@@ -774,8 +774,8 @@ class PET(nn.Module):
                 div_out[name] = out_sparse[name] if out_sparse is not None else out_dense[name]
         div_out['split_map_raw'] = outputs['split_map_raw']
         
-        # if 'eval_s' in kwargs:
-        #     div_out['ind']=criterion.forward_ind(div_out, targets)          # RSC output_index
+        if 'eval_s' in kwargs:
+            div_out['ind']=criterion.forward_ind(div_out, targets)          # RSC output_index
             
         return div_out
 
@@ -901,96 +901,109 @@ def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_
 
 def generate_prob_map_from_points(targets, img_h, img_w, device='cuda', alpha=0.4):
     """
-    Generate a probability map using points from the target dictionary list.
+    (优化版) 
+    使用来自 target 字典列表的点生成概率图（密度图）。
     
+    此版本通过用基于坐标网格的元素级张量操作替换 N 次 2D 卷积，
+    极大地提高了性能，并修复了 N=1 个点时的 KNN bug。
+
     Args:
-        targets (list of dict): List of dictionaries, each containing 'points', 'labels', and 'density'.
-        img_h (int): Height of the image.
-        img_w (int): Width of the image.
-        device (str): The device to run the computation on ('cuda' or 'cpu').
-        alpha (float): A scaling factor for the sigma value.
+        targets (list of dict): 字典列表，每个包含 'points'。
+        img_h (int): 图像高度。
+        img_w (int): 图像宽度。
+        device (str): 计算设备 ('cuda' or 'cpu')。
+        alpha (float): sigma 的缩放因子。
 
     Returns:
-        torch.Tensor: The generated probability map of shape (1, img_h, img_w).
+        torch.Tensor: 生成的概率图，形状为 (img_h, img_w)。
     """
-    # Collect points from all entries in the targets list
-    all_points = []
-    for target in targets:
-        points = target['points'].cpu().numpy()
-        all_points.append(points)
     
-    # Convert all points to a numpy array
-    all_points = np.vstack(all_points)
-
-    # Ensure points are valid
-    if len(all_points) == 0:
-        return torch.zeros((1, img_h, img_w), dtype=torch.float32, device=device)
-
-    # Handle the edge case where there's only one point
-    #  If only one point, k-NN is not possible, we can use a fallback sigma directly.
-    #  Dynamically set k: it's the smaller of 4 and the number of points.
+    # --- 1. 收集点 (已优化) ---
+    if not targets:
+        return torch.zeros((img_h, img_w), dtype=torch.float32, device=device)
+        
+    all_points_list = [t['points'] for t in targets if t['points'].shape[0] > 0]
     
-    # Create a KDTree to compute distances between points
-    tree = KDTree(all_points)
-    distances, locations = tree.query(all_points, k=min(4, len(all_points)))
+    if not all_points_list:
+        # 如果所有 target 都为空
+        return torch.zeros((img_h, img_w), dtype=torch.float32, device=device)
 
-    # Initialize an empty density map
-    density = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
+    all_points_tensor = torch.cat(all_points_list, dim=0)
+    all_points = all_points_tensor.cpu().numpy()
+    num_points = len(all_points)
 
+    if num_points == 0:
+        return torch.zeros((img_h, img_w), dtype=torch.float32, device=device)
+
+    # --- 2. KNN 计算 (已修复 Bug) ---
+    # 仅当点多于1个时才进行 KNN 查询，以避免 k=1
+    distances, locations = None, None
+    if num_points > 1:
+        tree = KDTree(all_points)
+        # k_query 将始终 >= 2, 保证 'distances' 是 2D 数组
+        k_query = min(4, num_points) 
+        distances, locations = tree.query(all_points, k=k_query)
+
+    # --- 3. 创建坐标网格 (核心优化) ---
+    # 创建一次网格，用于所有点的计算
+    # 'ij' 索引确保 yy 对应 H (维度0)，xx 对应 W (维度1)
+    yy, xx = torch.meshgrid(
+        torch.arange(img_h, dtype=torch.float32, device=device),
+        torch.arange(img_w, dtype=torch.float32, device=device),
+        indexing='ij'
+    )
+    
+    # 最终的密度图，形状 (H, W)
+    density = torch.zeros((img_h, img_w), dtype=torch.float32, device=device)
+
+    # --- 4. 主循环 (内部已优化) ---
     for i, pt in enumerate(all_points):
-        # floor-int-clamp
-        x = int(np.floor(pt[0]))
-        y = int(np.floor(pt[1]))
-        if x < 0 or y < 0:
-            continue
-        x = min(x, img_w - 1)
-        y = min(y, img_h - 1)
+        # pt[0] 是 x (对应 W), pt[1] 是 y (对应 H)
+        # 我们直接使用 float 坐标，更精确
+        x0, y0 = pt[0], pt[1]
 
-        # Create a 2D map with a single point set to 1
-        pt2d = torch.zeros((1, 1, img_h, img_w), dtype=torch.float32, device=device)
-        pt2d[0, 0, y, x] = 1.0
+        # --- 5. 计算 Sigma (使用修复后的逻辑) ---
+        sigma = -1.0
+        if distances is not None:
+            # distances[i][0] 是到自身的距离(0.0)
+            # distances[i][1] 是到第1近邻的距离
+            if np.isfinite(distances[i][1]):
+                di = distances[i][1]
+                neighbor_idx = locations[i][1:] # k-1 个邻居的索引
 
-        # Dynamically calculate sigma based on neighbor distances
-        if len(distances[i]) >= 2 and np.isfinite(distances[i][1]):
-            di = distances[i][1]
-            neighbor_idx = locations[i][1:]
-            neighbor_distances = []
-            for idx in neighbor_idx:
-                if np.isfinite(distances[idx][1]):
-                    neighbor_distances.append(distances[idx][1])
+                # (微优化) 向量化内部循环
+                # 获取邻居的 "第1近邻距离"
+                valid_neighbor_mask = np.isfinite(distances[neighbor_idx, 1])
+                neighbor_distances = distances[neighbor_idx[valid_neighbor_mask], 1]
+                
+                if len(neighbor_distances) > 0:
+                    d_mtop3 = np.mean(neighbor_distances)
+                    d = min(di, d_mtop3)
+                else:
+                    d = di # 回退
+                
+                sigma = alpha * d
 
-            if len(neighbor_distances) > 0:
-                d_mtop3 = np.mean(neighbor_distances)
-                d = min(di, d_mtop3)
-            else:
-                d = di  # fallback
-            
-            sigma = alpha * d
-        else:
-            sigma = np.average(np.array([img_h, img_w])) / 4.0  # fallback
+        # 回退: 适用于 N=1 或邻居距离无效的情况
+        if sigma <= 0: 
+            sigma = np.average([img_h, img_w]) / 4.0
 
-        sigma = max(sigma, 1.0)
+        sigma = max(sigma, 1.0) # 确保最小 sigma
 
-        # Generate a Gaussian kernel based on sigma
-        kernel_size = int(6 * sigma)
-        if kernel_size % 2 == 0:
-            kernel_size += 1
+        # --- 6. 生成高斯斑点 (核心优化) ---
+        # 替代 F.conv2d + 归一化
+        # (xx - x0)**2 + (yy - y0)**2 计算所有像素到 (x0, y0) 的平方欧氏距离
+        dist_sq = (xx - x0)**2 + (yy - y0)**2
+        
+        # exp(-0) = 1，所以高斯峰值自动为 1，
+        # 这等效于你原来的 "filter / peak" 归一化操作
+        g_blob = torch.exp(-dist_sq / (2.0 * sigma**2))
+        
+        # --- 7. 更新密度图 ---
+        density = torch.maximum(density, g_blob)
 
-        gaussian_kernel = generate_gaussian_kernel_prob(kernel_size, sigma, device)
-        gaussian_kernel = gaussian_kernel.unsqueeze(0).unsqueeze(0)  # [1, 1, k, k]
-
-        # Apply Gaussian filter to the point map
-        filter = F.conv2d(pt2d, gaussian_kernel, padding=kernel_size // 2)
-
-        # Normalize the filter to avoid numerical instability
-        peak = filter[0, 0, y, x]
-        if peak > 0:
-            filter = filter / peak
-
-        # Update the density map with the current filter
-        density = torch.maximum(density, filter)
-
-    return density.squeeze()
+    # 返回 (H, W) 张量，与你原始函数 squeeze() 后的结果一致
+    return density
 
 def generate_gaussian_kernel_prob(kernel_size, sigma, device='cuda'):
     """
@@ -1122,9 +1135,15 @@ class SetCriterion(nn.Module):
             # loss_points_raw = weighted_smooth_l1_loss(src_points, target_points, sigma=16.0)
             pass
         elif kwargs['loss_f'] == 'prob':
-            gt_prob_map = build_density_map_from_points_with_kdtree(
-                target_points, batch_indices, img_h, img_w, device=src_points.device
-            )
+            B = len(targets) 
+            if target_points.numel() == 0:
+                gt_prob_map = torch.zeros((B, 1, img_h, img_w), 
+                                          dtype=torch.float32, 
+                                          device=src_points.device)
+            else:
+                gt_prob_map = build_density_map_from_points_with_kdtree(
+                    target_points, batch_indices, img_h, img_w, device=src_points.device
+                )
             x = (src_points[:, 0] * img_w).clamp(0, img_w - 1)
             y = (src_points[:, 1] * img_h).clamp(0, img_h - 1)
             x_norm = x / (img_w - 1) * 2 - 1
@@ -1149,7 +1168,7 @@ class SetCriterion(nn.Module):
                 loss_points_raw = - (1.0 - prob_vals).pow(gamma) * torch.log(prob_vals.clamp_min(eps))
             
             # scale factor & shape adjustment
-            loss_points_raw = loss_points_raw.unsqueeze(1).expand(-1, 2) * 0.05
+            loss_points_raw = loss_points_raw.unsqueeze(1).expand(-1, 2) * 0.05 * 0.25
         else:
             loss_points_raw = F.smooth_l1_loss(src_points, target_points, reduction='none')
 

@@ -282,6 +282,9 @@ def cal_distance(sig_s, ind, target_set, outputs_set):
 @torch.no_grad()
 def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=False, args=None, criterion=None): 
     model.eval()
+    
+    # for more VRAM, use: 
+    torch.cuda.empty_cache()
 
     gt_determined = 1 if args.dataset_file == 'WuhanMetro' else 100
     # gt_determined = 100
@@ -296,6 +299,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
     gt_cnt_all, pd_cnt_all = [], []
     gt_cnt_all_ac, pd_cnt_all_ac = [], []
     print_freq = 10; count = 0
+
     for samples, targets, prob in metric_logger.log_every(data_loader, print_freq, header):
         
         samples = samples.to(device)    # tensors [torch.Size([1, 3, 512, 1024])]

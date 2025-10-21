@@ -109,7 +109,7 @@ def main(args):
     # output directory and log 
     if utils.is_main_process:
         if args.dataset_file in ['People', 'Ship', 'Car']:
-            output_dir = os.path.join("./outputs/TGRS", args.dataset_file, args.output_dir)
+            output_dir = os.path.join("./outputs/RS", args.dataset_file, args.output_dir)
         elif args.dataset_file in ['SHA', 'SHB']:
             output_dir = os.path.join("./outputs/true_cc", args.dataset_file, args.output_dir)
         # elif args.dataset_file in ['RTC', 'WuhanMetro']:
@@ -147,7 +147,7 @@ def main(args):
     # training
     print("\ntraining\n")
     start_time = time.time()
-    for epoch in range(args.start_epoch, args.epochs):
+    for epoch in range(args.start_epoch, args.epochs+1):
         try:
             data_loader_train.dataset.set_epoch(epoch)
         except:
@@ -233,7 +233,10 @@ def main(args):
                                 'best_epoch': best_epoch
                             }, checkpoint_path)
             print("\n==========================")
-            print("\nepoch:", epoch, "mae:", mae, "mse:", mse, "r2", r2, "\n\nbest mae:", best_mae, "best epoch:", best_epoch)
+            print("\nepoch:", epoch, "mae:", mae, "mse:", mse, "r2", r2, "\n\nbest mae:", best_mae, "best epoch:", best_epoch, '\n', "other stats:", test_stats)
+            if args.dataset_file in ['People', 'Ship', 'Car']:
+                print(f"\nmain stat:   \t mae: {test_stats['mae']:.4f}; \tprec: {test_stats['Prec']:.4f}; \tracc: {test_stats['racc']:.4f}; \tr2: {test_stats['r2']:.4f}",
+                      f"\nmain stat_ac:\t mae: {test_stats['mae_ac']:.4f}; \tprec: {test_stats['pre_ac']:.4f}; \tracc: {test_stats['rac_ac']:.4f}; \tr2: {test_stats['r2_ac']:.4f}")
             print("\n==========================\n")
             if utils.is_main_process():
                 with open(run_log_name, "a") as log_file:
