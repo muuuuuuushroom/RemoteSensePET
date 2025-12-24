@@ -807,6 +807,8 @@ class PET(nn.Module):
         else:
             split_map = self.quadtree_splitter(src)  # split_map: B*1*src_h/4*src_w/8
             
+        # split_map = 1 - split_map
+        
         split_map_dense = F.interpolate(split_map, (ds_h, ds_w)).reshape(bs, -1)  # nearest # dense split       1 means waiting for further revision
         split_map_sparse = 1 - F.interpolate(split_map, (sp_h, sp_w)).reshape(bs, -1)       # sparse split      we want 0 in sparse area
         
@@ -836,7 +838,7 @@ class PET(nn.Module):
         outputs['split_map_dense'] = split_map_dense
         return outputs
 
-def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_h, img_w, device, alpha=0.4):
+def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_h, img_w, device, alpha=0.4, prob_fixed=False):
     B = int(batch_indices.max().item()) + 1  # Calculate the batch size
     density = torch.zeros((B, 1, img_h, img_w), dtype=torch.float32, device=device)  # Initialize the density map
 
@@ -866,23 +868,26 @@ def build_density_map_from_points_with_kdtree(target_points, batch_indices, img_
             pt_map[0, 0, y, x] = 1.0
 
             # Estimate sigma
-            if num_pts > 1 and distances[i].shape[0] >= 2 and np.isfinite(distances[i][1]):
-                di = distances[i][1]
-                neighbor_idx = locations[i][1:]
-                neighbor_dists = []
+            if prob_fixed == 'dynamic':
+                if num_pts > 1 and distances[i].shape[0] >= 2 and np.isfinite(distances[i][1]):
+                    di = distances[i][1]
+                    neighbor_idx = locations[i][1:]
+                    neighbor_dists = []
 
-                for j in neighbor_idx:
-                    if j < len(distances) and distances[j].shape[0] >= 2 and np.isfinite(distances[j][1]):
-                        neighbor_dists.append(distances[j][1])
+                    for j in neighbor_idx:
+                        if j < len(distances) and distances[j].shape[0] >= 2 and np.isfinite(distances[j][1]):
+                            neighbor_dists.append(distances[j][1])
 
-                if len(neighbor_dists) > 0:
-                    d_mtop3 = np.mean(neighbor_dists)
-                    d = min(di, d_mtop3)
+                    if len(neighbor_dists) > 0:
+                        d_mtop3 = np.mean(neighbor_dists)
+                        d = min(di, d_mtop3)
+                    else:
+                        d = di
+                    sigma = max(alpha * d, 1.0)
                 else:
-                    d = di
-                sigma = max(alpha * d, 1.0)
-            else:
-                sigma = np.average([img_h, img_w]) / 4.0  # fallback sigma
+                    sigma = np.average([img_h, img_w]) / 4.0  # fallback sigma
+            elif prob_fixed == 'fixed':
+                sigma = 15
 
             # Generate Gaussian kernel
             kernel_size = int(6 * sigma)
@@ -1036,7 +1041,7 @@ class SetCriterion(nn.Module):
         1) compute hungarian assignment between ground truth points and the outputs of the model
         2) supervise each pair of matched ground-truth / prediction and split map
     """
-    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses, sparse_stride, dense_stride, map_loss, opt_query):
+    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses, sparse_stride, dense_stride, map_loss, opt_query, prob_fixed):
         """
         Parameters:
             num_classes: one-class in crowd counting
@@ -1059,6 +1064,7 @@ class SetCriterion(nn.Module):
         self.map_loss = map_loss
         self.opt_query = opt_query
         self.probloss_cal = 'Linear'
+        self.prob_fixed = prob_fixed
     
     def loss_labels(self, outputs, targets, indices, num_points, log=True, **kwargs):
         """
@@ -1120,7 +1126,7 @@ class SetCriterion(nn.Module):
         batch_indices = []  # which image in batch this point came from
         for i, (src_idx, _) in enumerate(indices):
             batch_indices.extend([i] * len(src_idx))
-        batch_indices = torch.tensor(batch_indices, device=src_points.device)
+        batch_indices = torch.tensor(batch_indices, device=src_points.device, dtype=torch.long)
         epoch = kwargs['epoch']
         target_points = torch.cat([t['points'][i] for t, (_, i) in zip(targets, indices)], dim=0)
 
@@ -1142,7 +1148,7 @@ class SetCriterion(nn.Module):
                                           device=src_points.device)
             else:
                 gt_prob_map = build_density_map_from_points_with_kdtree(
-                    target_points, batch_indices, img_h, img_w, device=src_points.device
+                    target_points, batch_indices, img_h, img_w, device=src_points.device, prob_fixed=self.prob_fixed
                 )
             x = (src_points[:, 0] * img_w).clamp(0, img_w - 1)
             y = (src_points[:, 1] * img_h).clamp(0, img_h - 1)
@@ -1168,7 +1174,7 @@ class SetCriterion(nn.Module):
                 loss_points_raw = - (1.0 - prob_vals).pow(gamma) * torch.log(prob_vals.clamp_min(eps))
             
             # scale factor & shape adjustment
-            loss_points_raw = loss_points_raw.unsqueeze(1).expand(-1, 2) * 0.05 * 0.25
+            loss_points_raw = loss_points_raw.unsqueeze(1).expand(-1, 2) * 0.05
         else:
             loss_points_raw = F.smooth_l1_loss(src_points, target_points, reduction='none')
 
@@ -1320,6 +1326,7 @@ def build_pet(args):
                              eos_coef=args.eos_coef, losses=losses,
                              sparse_stride=args.sparse_stride, dense_stride=args.dense_stride,
                              map_loss=args.prob_map_lc,
-                             opt_query=args.opt_query_decoder)
+                             opt_query=args.opt_query_decoder,
+                             prob_fixed=args.prob_bandwidth)
     criterion.to(device)
     return model, criterion

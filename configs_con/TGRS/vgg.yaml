@@ -1,0 +1,82 @@
+# base pet config with vgg16_bn backbone
+
+# training Parameters
+lr: 0.0001
+lr_backbone: 0.00001
+weight_decay: 0.0001
+clip_max_norm: 0.1
+# batch_size: 16
+epochs: 3000
+seed: 42
+eval_freq: 5
+
+# model parameters
+backbone: vgg16_bn
+position_embedding: sine
+attn_type: softmax
+encoder_free: False
+dec_layers: 2
+dim_feedforward: 512
+hidden_dim: 256
+dropout: 0.0
+nheads: 8
+backbone_num_channels: 256
+sparse_stride: 8
+dense_stride: 4
+enc_win_list: [[32, 16], [32, 16], [16, 8], [16, 8]]
+context_patch: [128, 64]
+# sparse_dec_win_size: [16, 8]
+# dense_dec_win_size: [8, 4]
+sparse_dec_win_size: [8, 4]
+dense_dec_win_size: [4, 2]
+syn_bn: 0
+
+# loss parameters
+set_cost_class: 1
+set_cost_point: 0.05
+ce_loss_coef: 1.0
+point_loss_coef: 5.0
+map_loss_coef: 1.0
+eos_coef: 0.5
+
+
+# dataset parameters
+data_path: ignore
+patch_size: 256   # patch_size = 512 originally
+num_workers: 2
+global_crop_ratio: 0.1
+
+predict: origin # hxn, origin
+save_ckpt_freq: 1000
+augmented: False
+opt_query_con: False
+
+# baseline setting
+# Orattn: True
+attn_splitter: False
+encoder_free: False
+
+# debug
+batch_size: 16
+
+# zlt para for decoder and loss
+opt_query_decoder: False
+loss_f: normal # prob, normal
+prob_map_lc: None # f4x, None
+
+# hfy para for backbone swin
+use_spatial_attention: False
+use_arc: False
+upsample_strategy: 'bilinear' # dysample, bilinear
+fpn_type: 'original'  # panet, original
+
+# one key setting
+one_key_hfy: False # backbone Feature
+one_key_zlt: False # attnsplit, boxquery, mixedloss
+
+# july stage para
+matcher: 'hun' # stable, hun 
+box_setting: 1 # 2 is qp from 0-1
+
+dataset_file: People
+output_dir: vgg #t_attnsplit_boxquery_mixedloss_ransize0618

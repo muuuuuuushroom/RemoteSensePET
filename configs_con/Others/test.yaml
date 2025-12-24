@@ -1,0 +1,60 @@
+# base pet config with swin backbone
+
+# training Parameters
+lr: 0.0001
+lr_backbone: 0.00001
+weight_decay: 0.0001
+clip_max_norm: 0.1
+batch_size: 3 # 64 should be available on A6000
+epochs: 3000
+seed: 42
+eval_freq: 5
+
+# model parameters
+backbone: swin_t
+position_embedding: sine
+attn_type: softmax
+encoder_free: True
+dec_layers: 6
+dim_feedforward: 512
+hidden_dim: 256
+dropout: 0.0
+nheads: 8
+backbone_num_channels: 512
+sparse_stride: 16
+dense_stride: 8
+enc_win_list: [[16, 8], [16, 8], [8, 4], [8, 4]]
+context_patch: [64, 32]
+sparse_dec_win_size: [8, 4]
+dense_dec_win_size: [4, 2]
+syn_bn: 0
+
+# loss parameters
+set_cost_class: 1
+set_cost_point: 0.05
+ce_loss_coef: 1.0
+point_loss_coef: 5.0
+map_loss_coef: 1.0
+eos_coef: 0.5
+
+# dataset parameters
+dataset_file: Ship
+data_path: ignore
+patch_size: 256   # patch_size = 512 originally
+num_workers: 2
+global_crop_ratio: 0.1
+
+save_ckpt_freq: 500
+hard_case: False
+augmented: False
+opt_query_decoder: True
+attn_splitter: False
+loss_f: normal # update  #gaussion_l2 #prob
+# info: 'constrain hxn predict'
+eval_path: mutilple_128
+matcher_opt: normal
+
+predict: origin # hxn, origin
+prob_map_lc: None # f4x, None
+
+output_dir: test  #t_noencoder_opre_probF4x

@@ -4,17 +4,17 @@ output_nohup
 outputs
 cache
 tools
-configs_con
+# configs_con
 configs_TGRS
-models/backbones/vgg.py
+# models/backbones/vgg.py
 
 __pycache__/
-*.py[cod]
+# *.py[cod]
 .vscode
-*.sh
+# *.sh
 *.pdf
 *.xlsx
 
-log_vis.ipynb
-paint_r2.py
-instru.py
+# log_vis.ipynb
+# paint_r2.py
+# instru.py

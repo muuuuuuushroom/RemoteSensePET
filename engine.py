@@ -29,6 +29,8 @@ class DeNormalize(object):
         return tensor
 
 
+
+
 def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=None, args=None, outputs=None):
     """                         # pred point & query
     Visualize predictions
@@ -36,12 +38,12 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
     box_flag = True if args.opt_query_decoder else False
     
     if args.dataset_file != 'WuhanMetro':
-        vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
-        vis_dir_nac = os.path.join(vis_dir, 'gt_nac')
-        os.makedirs(vis_dir_ac, exist_ok=True)
+        vis_dir_d = os.path.join(vis_dir, 'dense')
+        vis_dir_nac = os.path.join(vis_dir, 'sparse')
+        os.makedirs(vis_dir_d, exist_ok=True)
         os.makedirs(vis_dir_nac, exist_ok=True)
     else:
-        vis_dir_ac = vis_dir
+        vis_dir_d = vis_dir
         vis_dir_nac = vis_dir
         os.makedirs(vis_dir + '/3-1', exist_ok=True)
         os.makedirs(vis_dir + '/3-2', exist_ok=True)
@@ -131,10 +133,18 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
             
         # if not box_flag:
         # draw ground-truth points (red)
+        # if '1208' in targets[idx]["image_path"].split("/")[-1].split(".")[0]:
+        #     mul = 2
+        # else:
+        #     mul = 1
+        mul = 1
+        if '970' in targets[idx]["image_path"].split("/")[-1].split(".")[0]:
+            continue
+            
         size = 2
         for i, t in enumerate(gts[idx]):
             sample_vis = cv2.circle(
-                sample_vis, (int(t[1]), int(t[0])), size+2, (0, 0, 255), -1
+                sample_vis, (int(t[1]*mul), int(t[0])*mul), size+2, (0, 0, 255), -1
             )
                     # cv2.putText(sample_vis, str(i+1), (int(t[1]+3), int(t[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
@@ -146,30 +156,31 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
                     # cv2.putText(sample_vis, str(i+1), (int(p[1]+3), int(p[0])+3), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         # draw point-query
-        for i, q in enumerate(queries[idx]):
+        # for i, q in enumerate(queries[idx]):
             
-            if args.predict == 'origin':
-                q[1] *= w
-                q[0] *= h
-            sample_vis = cv2.circle(
-                sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
-                )
-            # draw line between query and pred
-            q_x, q_y = int(q[1]), int(q[0])
-            p_x, p_y = int(pred[idx][i][1]), int(pred[idx][i][0])
-            overlay = sample_vis.copy()
-            cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
-            alpha = 0.5 
-            sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
+        #     if args.predict == 'origin':
+        #         q[1] *= w
+        #         q[0] *= h
+        #     sample_vis = cv2.circle(
+        #         sample_vis, (int(q[1]), int(q[0])), size, (0, 255, 255), -1
+        #         )
+        #     # draw line between query and pred
+        #     q_x, q_y = int(q[1]), int(q[0])
+        #     p_x, p_y = int(pred[idx][i][1]), int(pred[idx][i][0])
+        #     overlay = sample_vis.copy()
+        #     cv2.line(overlay, (p_x, p_y), (q_x, q_y), (0, 255, 0), 2) 
+        #     alpha = 0.5 
+        #     sample_vis = cv2.addWeighted(overlay, alpha, sample_vis, 1 - alpha, 0)
             # cv2.putText(sample_vis, str(i+1), (int(q[1]*w-3), int(q[0]*h)-3), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
         
         # draw split map
-        if split_map is not None:
-            imgH, imgW = sample_vis.shape[:2]
-            split_map = (split_map * 255).astype(np.uint8)
-            split_map = cv2.applyColorMap(split_map, cv2.COLORMAP_JET)
-            split_map = cv2.resize(split_map, (imgW, imgH), interpolation=cv2.INTER_NEAREST)
-            sample_vis = split_map * 0.7 + sample_vis
+        # if split_map is not None:
+        #     imgH, imgW = sample_vis.shape[:2]
+        #     split_map = (split_map * 255).astype(np.uint8)
+        #     split_map = 255 - split_map
+        #     split_map = cv2.applyColorMap(split_map, cv2.COLORMAP_JET)
+        #     split_map = cv2.resize(split_map, (imgW, imgH), interpolation=cv2.INTER_NEAREST)
+        #     sample_vis = split_map * 0.7 + sample_vis
 
         # save image
         if vis_dir is not None:
@@ -177,7 +188,79 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
             valid_area = torch.where(~masks[idx])
             valid_h, valid_w = valid_area[0][-1], valid_area[1][-1]
             sample_vis = sample_vis[: valid_h + 1, : valid_w + 1]
+            
 
+        # --- V V V --- 帮助函数：添加带透明背景的文本 (修改为左上角) --- V V V ---
+            def add_text_with_transparent_bg(image, w_img, h_img):
+                # 文本内容
+                gt_text = f"GT: {len(gts[idx])}"
+                pred_text = f"Pred: {len(pred[idx])}"
+                
+                # 字体和颜色设置
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1
+                thickness = 2
+                text_color = (0, 0, 0)      # 黑色字体
+                bg_color = (255, 255, 255) # 白色背景
+                
+                # 透明度: 70% 透明 -> 30% 不透明
+                alpha = 0.3 
+                beta = 1.0 - alpha
+                
+                # 边距和行距
+                padding = 5  # 文本和矩形框边缘的内部边距
+                line_spacing = 5 # 两行文本之间的额外间距
+                
+                # 1. 计算文本大小和矩形框位置
+                (gt_text_w, gt_text_h), gt_baseline = cv2.getTextSize(gt_text, font, font_scale, thickness)
+                (pred_text_w, pred_text_h), pred_baseline = cv2.getTextSize(pred_text, font, font_scale, thickness)
+                
+                max_text_w = max(gt_text_w, pred_text_w)
+                # 注意: gt_text_h 是从基线到文本顶部的距离
+                line_height = gt_text_h # 我们使用这个作为基线到基线的距离
+                
+                # 矩形框坐标 (紧贴左上角 0,0)
+                rect_x1 = 0
+                rect_y1 = 0
+                rect_x2 = padding + max_text_w + padding
+                # 总高度 = 顶部padding + 第一行高度 + 行距 + 第二行高度 + 底部padding
+                # (我们用 gt_text_h 近似两行的高度)
+                rect_y2 = padding + gt_text_h + line_spacing + pred_text_h + padding + pred_baseline
+                
+                # 确保坐标不会超出图像边界
+                rect_x1 = max(0, rect_x1)
+                rect_y1 = max(0, rect_y1)
+                rect_x2 = min(w_img, rect_x2)
+                rect_y2 = min(h_img, rect_y2)
+
+                # 2. 创建一个副本用于混合
+                overlay = image.copy()
+                # 在副本上绘制实心白色矩形
+                cv2.rectangle(overlay, (rect_x1, rect_y1), (rect_x2, rect_y2), bg_color, -1)
+                
+                # 3. 将副本 (带矩形) 与原始图像混合
+                blended_image = cv2.addWeighted(overlay, alpha, image, beta, 0.0)
+                
+                # 4. 在混合后的图像上绘制黑色文本 (实现左对齐)
+                # GT 文本
+                gt_text_x = padding
+                gt_text_y = padding + gt_text_h # (x, y) 是基线的左下角
+                cv2.putText(blended_image, gt_text, (gt_text_x, gt_text_y), font, font_scale, text_color, thickness, cv2.LINE_AA)
+                
+                # Pred 文本
+                pred_text_x = padding
+                # 第二行的基线 = 第一行的基线 + 行高 + 行距
+                pred_text_y = gt_text_y + gt_text_h + line_spacing 
+                cv2.putText(blended_image, pred_text, (pred_text_x, pred_text_y), font, font_scale, text_color, thickness, cv2.LINE_AA)
+                
+                return blended_image
+            # --- ^ ^ ^ --- 帮助函数结束 --- ^ ^ ^ ---
+
+            # --- V V V --- 在这里添加文本 (用于 sample_vis_box) --- V V V ---
+            # 使用原始图像的 w, h
+            sample_vis = add_text_with_transparent_bg(sample_vis, w, h)
+            # --- ^ ^ ^ --- 添加文本结束 --- ^ ^ ^ ---
+            
             if args.dataset_file == 'WuhanMetro':
                 pre_name_folder = targets[idx]["image_path"].split("/")[-2]
             name = targets[idx]["image_path"].split("/")[-1].split(".")[0]
@@ -185,7 +268,7 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
             if gt_cnt > 100:
                 cv2.imwrite(
                     os.path.join(
-                        vis_dir_ac,
+                        vis_dir_d,
                         "{}_gt{}_pred{}.jpg".format(name, len(gts[idx]), len(pred[idx])),
                     ),
                     sample_vis,
@@ -201,6 +284,14 @@ def visualization(samples, targets, pred, queries, vis_dir, gt_cnt, split_map=No
                     sample_vis,
                 )
 
+
+def _to_device(v, device):
+    if torch.is_tensor(v):
+        return v.to(device, non_blocking=True)
+    # 兼容 list/tuple 里嵌 tensor 的情况（可选）
+    if isinstance(v, (list, tuple)):
+        return type(v)(_to_device(x, device) for x in v)
+    return v
 
 # training
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -219,7 +310,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if probability[0] is not None:
             probability = probability.to(device)
         
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        # targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        targets = [{k: _to_device(v, device) for k, v in t.items()} for t in targets]
         gt_points = [target['points'] for target in targets]
         
         # start training transformer
@@ -281,11 +373,10 @@ def cal_distance(sig_s, ind, target_set, outputs_set):
 # evaluation
 @torch.no_grad()
 def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=False, args=None, criterion=None): 
-    model.eval()
-    
     # for more VRAM, use: 
     torch.cuda.empty_cache()
-
+    
+    model.eval()
     gt_determined = 1 if args.dataset_file == 'WuhanMetro' else 100
     # gt_determined = 100
     metric_logger = utils.MetricLogger(delimiter="  ", win_size=len(data_loader))
@@ -293,11 +384,11 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
 
     # if vis_dir is not None:
         # os.makedirs(vis_dir, exist_ok=True)
-        # vis_dir_ac = os.path.join(vis_dir, 'gt_ac')
-        # os.makedirs(vis_dir_ac, exist_ok=True)
+        # vis_dir_d = os.path.join(vis_dir, 'gt_d')
+        # os.makedirs(vis_dir_d, exist_ok=True)
         
     gt_cnt_all, pd_cnt_all = [], []
-    gt_cnt_all_ac, pd_cnt_all_ac = [], []
+    gt_cnt_all_d, pd_cnt_all_d = [], []
     print_freq = 10; count = 0
 
     for samples, targets, prob in metric_logger.log_every(data_loader, print_freq, header):
@@ -320,9 +411,9 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
         abs_ = abs(predict_cnt - gt_cnt) / gt_cnt
         
         if gt_cnt > gt_determined:
-            mae_ac = abs(predict_cnt - gt_cnt)
-            mse_ac = (predict_cnt - gt_cnt) * (predict_cnt - gt_cnt)
-            abs_ac = abs(predict_cnt - gt_cnt) / gt_cnt
+            mae_d = abs(predict_cnt - gt_cnt)
+            mse_d = (predict_cnt - gt_cnt) * (predict_cnt - gt_cnt)
+            abs_d = abs(predict_cnt - gt_cnt) / gt_cnt
 
         # target boxes
         # print('\n\nargs is \n\n', args.dataset_file, '\n\n')  # dataset_file='RTC'
@@ -337,26 +428,26 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
 
             if outputs_set.shape[0] != 0:
                 tp = cal_distance(target_box, ind, target_set, outputs_set)
-                tp_ac = tp
+                tp_d = tp
             else:
-                tp_ac = 0
+                tp_d = 0
                 tp = 0
                 if gt_cnt > gt_determined:
-                    tp_ac = tp
+                    tp_d = tp
 
             # F1 compute
             fn = gt_cnt - tp
             fp = predict_cnt - tp
             Prec = tp / (tp + fp + 1e-8)
             Recall = tp / (tp + fn + 1e-8)
-            F1_s = 2 * (Prec * Recall) / (Prec + Recall + 1e-8)
+            f1 = 2 * (Prec * Recall) / (Prec + Recall + 1e-8)
             
             if gt_cnt > gt_determined:
-                fn_ac = gt_cnt - tp_ac
-                fp_ac = predict_cnt - tp_ac
-                pre_ac = tp_ac / (tp_ac + fp_ac + 1e-8)
-                rec_ac = tp_ac / (tp_ac + fn_ac + 1e-8)
-                f1_ac = 2 * (pre_ac * rec_ac) / (pre_ac + rec_ac + 1e-8)
+                fn_d = gt_cnt - tp_d
+                fp_d = predict_cnt - tp_d
+                pre_d = tp_d / (tp_d + fp_d + 1e-8)
+                rec_d = tp_d / (tp_d + fn_d + 1e-8)
+                f1_d = 2 * (pre_d * rec_d) / (pre_d + rec_d + 1e-8)
 
 
         # record results
@@ -365,19 +456,19 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
         results['mae'], results['mse'] = toTensor(mae), toTensor(mse)
         
         if args.dataset_file in ['Ship', 'People', 'Car']:
-            results["Prec"], results["Recall"], results["F1_s"], results["abs"] = Prec, Recall, F1_s, abs_
+            results["Prec"], results["Recall"], results["f1"], results["abs"] = Prec, Recall, f1, abs_
             if gt_cnt > gt_determined:
                 (   
-                    results["mae_ac"],
-                    results["mse_ac"],
-                    results["pre_ac"],
-                    results["reca_ac"],
-                    results["f1_ac"],
-                    results["abs_ac"]
-                ) = (toTensor(mae_ac), toTensor(mse_ac), pre_ac, rec_ac, f1_ac, abs_ac)
+                    results["mae_d"],
+                    results["mse_d"],
+                    results["pre_d"],
+                    results["reca_d"],
+                    results["f1_d"],
+                    results["abs_d"]
+                ) = (toTensor(mae_d), toTensor(mse_d), pre_d, rec_d, f1_d, abs_d)
         else:
-            results["Prec"], results["Recall"], results["F1_s"], results["abs"]= 0, 0, 0, 0
-            results["mae_ac"], results["mse_ac"], results["pre_ac"], results["reca_ac"], results["f1_ac"], results["abs_ac"] = 0, 0, 0, 0, 0, 0
+            results["Prec"], results["Recall"], results["f1"], results["abs"]= 0, 0, 0, 0
+            results["mae_d"], results["mse_d"], results["pre_d"], results["reca_d"], results["f1_d"], results["abs_d"] = 0, 0, 0, 0, 0, 0
         
         if distributed:
             # results = utils.reduce_dict(results)
@@ -385,8 +476,8 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
             pd_cnt_all += [i.cpu().numpy() for i in utils.all_gather(toTensor(predict_cnt))]
             
             if gt_cnt > gt_determined:
-                gt_cnt_all_ac += [i.cpu().numpy() for i in utils.all_gather(toTensor(gt_cnt))]
-                pd_cnt_all_ac += [i.cpu().numpy() for i in utils.all_gather(toTensor(predict_cnt))]
+                gt_cnt_all_d += [i.cpu().numpy() for i in utils.all_gather(toTensor(gt_cnt))]
+                pd_cnt_all_d += [i.cpu().numpy() for i in utils.all_gather(toTensor(predict_cnt))]
             # print('gt_cnt:',gt_cnt, 'gt_cnt_gather:', len(gt_cnt_all))
             metric_logger.update(
                 mae=results["mae"],
@@ -394,13 +485,13 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
             )
         else:
             if gt_cnt > gt_determined:
-                gt_cnt_all_ac.append(gt_cnt)
-                pd_cnt_all_ac.append(predict_cnt)
+                gt_cnt_all_d.append(gt_cnt)
+                pd_cnt_all_d.append(predict_cnt)
                 metric_logger.update(
                     mae=results["mae"],
                     mse=results["mse"],
-                    mae_ac=results["mae_ac"],
-                    mse_ac=results["mse_ac"],
+                    mae_d=results["mae_d"],
+                    mse_d=results["mse_d"],
                 )
             else:
                 gt_cnt_all.append(gt_cnt)
@@ -417,15 +508,15 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
                 mse=results["mse"],
                 Prec=results["Prec"],
                 Recall=results["Recall"],
-                F1_s=results["F1_s"],
+                f1=results["f1"],
                 abs=results["abs"],
                 
-                mae_ac = results["mae_ac"],
-                mse_ac=results["mse_ac"],
-                pre_ac=results["pre_ac"],
-                rec_ac=results["reca_ac"],
-                f1_ac=results["f1_ac"],
-                abs_ac=results["abs_ac"],
+                mae_d = results["mae_d"],
+                mse_d=results["mse_d"],
+                pre_d=results["pre_d"],
+                rec_d=results["reca_d"],
+                f1_d=results["f1_d"],
+                abs_d=results["abs_d"],
             )
         else:
             metric_logger.update(
@@ -433,7 +524,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
                 mse=results["mse"],
                 Prec=results["Prec"],
                 Recall=results["Recall"],
-                F1_s=results["F1_s"],
+                f1=results["f1"],
                 abs=results["abs"],
             )
 
@@ -454,37 +545,37 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     gt_cnt_array, pd_cnt_array = np.array(gt_cnt_all), np.array(pd_cnt_all)
-    gt_cnt_array_ac, pd_cnt_array_ac = np.array(gt_cnt_all_ac), np.array(pd_cnt_all_ac)
+    gt_cnt_array_d, pd_cnt_array_d = np.array(gt_cnt_all_d), np.array(pd_cnt_all_d)
     
     results = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     results["mse"] = np.sqrt(results["mse"])
-    results["mse_ac"] = np.sqrt(results["mse_ac"])
+    results["mse_d"] = np.sqrt(results["mse_d"])
     
     # print(len(gt_cnt_array), len(pd_cnt_array))
-    results["r2"] = r2_score(gt_cnt_array, pd_cnt_array) if args.dataset_file != 'WuhanMetro' else r2_score(gt_cnt_array_ac, pd_cnt_array_ac)
-    results["r2_ac"] = r2_score(gt_cnt_array_ac, pd_cnt_array_ac)
+    results["r2"] = r2_score(gt_cnt_array, pd_cnt_array) if args.dataset_file != 'WuhanMetro' else r2_score(gt_cnt_array_d, pd_cnt_array_d)
+    results["r2_d"] = r2_score(gt_cnt_array_d, pd_cnt_array_d)
     # results["rmae"], results["rmse"] = metrics.compute_relerr(
     #     gt_cnt_array, pd_cnt_array
     # )
     results['rmae'], results['rmse'] = metrics.compute_relerr(gt_cnt_array, pd_cnt_array)
     results["racc"] = metrics.compute_racc(gt_cnt_array, pd_cnt_array)
-    results["rac_ac"] = metrics.compute_racc(gt_cnt_array_ac, pd_cnt_array_ac)
+    results["rac_d"] = metrics.compute_racc(gt_cnt_array_d, pd_cnt_array_d)
     
     if args.dataset_file in ['Ship', 'People', 'Car']:
-        order = ["mae", "mae_ac",
-                "mse", "mse_ac",
-                "Prec", "pre_ac",
-                "Recall", "rec_ac",
-                "F1_s", "f1_ac",
-                "abs", "abs_ac",
-                "r2", "r2_ac",
-                "racc", "rac_ac",
+        order = ["mae", "mae_d",
+                "mse", "mse_d",
+                "Prec", "pre_d",
+                "Recall", "rec_d",
+                "f1", "f1_d",
+                "abs", "abs_d",
+                "r2", "r2_d",
+                "racc", "rac_d",
                 "rmae", "rmse"]
         
         def custom_sort_key(item):
             key, value = item
             index = order.index(key) if key in order else len(order) + 1
-            return (index, not key.endswith('_ac'), key)
+            return (index, not key.endswith('_d'), key)
         results = dict(sorted(results.items(), key=custom_sort_key))
 
     return results

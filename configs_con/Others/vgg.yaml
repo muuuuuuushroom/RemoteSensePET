@@ -1,0 +1,56 @@
+
+# training Parameters
+lr: 0.0001 #1e-4
+lr_backbone: 0.00001 #1e-5
+weight_decay: 0.0001 #1e-4
+clip_max_norm: 0.1
+batch_size: 8 # 8 by default, 64 should be available on A6000
+epochs: 1500 # 1500
+seed: 3407 # 42, 3407
+eval_freq: 5
+
+# model parameters
+backbone: vgg16_bn
+position_embedding: sine #choices=('sine', 'learned', 'fourier'),
+attn_type: softmax
+encoder_free: False
+dec_layers: 2
+dim_feedforward: 512
+hidden_dim: 256
+dropout: 0.0
+nheads: 8
+backbone_num_channels: 256 # 256, 512
+sparse_stride: 8 #8
+dense_stride: 4 #4
+enc_win_list: [[32, 16], [32, 16], [16, 8], [16, 8]] #[[64, 32], [64, 32], [32, 16], [32, 16]] #[[32, 16], [32, 16], [16, 8], [16, 8]]
+context_patch: [256, 128] #[128, 64]
+sparse_dec_win_size: [16, 8] # [32, 16] #[16, 8]
+dense_dec_win_size: [8, 4] #[16, 8] #[8, 4]
+# sparse_dec_win_size: [8, 4]
+# dense_dec_win_size: [4, 2]
+syn_bn: 0
+
+# loss parameters
+set_cost_class: 1
+set_cost_point: 0.05
+ce_loss_coef: 1.0
+point_loss_coef: 5.0
+eos_coef: 0.5
+
+# dataset parameters
+dataset_file: WuhanMetro
+data_path: ignore
+patch_size: 512
+num_workers: 2
+global_crop_ratio: 0.1
+
+save_ckpt_freq: 500
+augmented: False
+opt_query_decoder: False
+opt_query_con: False 
+attn_splitter: False
+loss_f: prob # gaussion_l2, prob, normal
+predict: origin # hxn, origin
+prob_map_lc: f4x # f4x, None
+
+output_dir: vgg_bigctxtps_mixedloss #vgg_conquery # test #vgg_split_conquery # t_noencoder_opre_probF4x

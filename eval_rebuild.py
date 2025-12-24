@@ -27,7 +27,7 @@ def get_args_parser():
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--resume', default='/data/zlt/RemoteSensePET/outputs/Ship/t_noencoder_attn_opre_bs16_withen_box1_layer6/best_checkpoint.pth', help='resume from checkpoint')
-    parser.add_argument('--vis_dir', default='/data/zlt/RemoteSensePET/outputs/Ship/t_noencoder_attn_opre_bs16_withen_box1_layer6/vis')
+    parser.add_argument('--vis_dir', default='/data/zlt/RemoteSensePET/outputs/Ship/t_noencoder_attn_opre_bs16_withen_box1_layer6/vis_test')
     parser.add_argument('--eval_pad', default='padding_center')
     parser.add_argument('--eval_robust', default=[])
     parser.add_argument('--robust_para', default=None)
@@ -105,14 +105,14 @@ def main(args):
     
     infer_time = t2 - t1
     fps = len(dataset_val) / infer_time 
-    print(args, f"\n\ninfer from: {args.output_dir}\ninferring time: {infer_time:.4f}s")
+    # print(args, f"\n\ninfer from: {args.output_dir}\ninferring time: {infer_time:.4f}s")
     print(f'FPS: {fps:.2f}')
     
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('params:', n_parameters/1e6)
     # mae, mse = test_stats['mae'], test_stats['mse']
     # line = f"epoch: {cur_epoch}"  # , mae: {mae}, mse: {mse}, r2: {test_stats['r2']}, rmae: {test_stats['rmae']} "
-    print(f'epoch: {cur_epoch}\t\t\tgt > {args.gt_determined} ended with \'ac\' below:')
+    print(f'epoch: {cur_epoch}\t\t\tgt > {args.gt_determined} ended with \'d\' below:')
     count = 0
     for k, v in test_stats.items():
         if count % 2 == 0:
@@ -120,6 +120,16 @@ def main(args):
         else:
             print(k,'\t', v)
         count += 1
+    print('\n', '='*30)
+    scene = 'Vessel' if args.dataset_file == 'Ship' else None
+    scene = 'Vehicle' if args.dataset_file == 'Car' else scene
+    scene = 'People' if args.dataset_file == 'People' else scene
+    # if scene is not None:
+    print(f'Performance in dense **{scene}** condition:', 
+                '\n\tOverall MAE:\t', test_stats['mae_d'],
+                '\n\tCounting Accuracy:\t', test_stats['rac_d'],
+                '\n\tLocating Precision:\t', test_stats['pre_d'],
+                )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('PET evaluation script', parents=[get_args_parser()])
@@ -139,5 +149,7 @@ if __name__ == '__main__':
         args.use_arc=False
         args.upsample_strategy='bilinear' # dysample, bilinear
         args.fpn_type='original'  # panet, original
+        
+    args.prob_bandwidth = 'dynamic'
     
     main(args)
