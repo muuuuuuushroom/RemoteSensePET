@@ -52,8 +52,10 @@ def get_args_parser():
 
 def main(args):
     utils.init_distributed_mode(args)
+    torch.cuda.set_device(args.gpu)
     print(args)
-    device = torch.device(args.device)
+    # device = torch.device(args.device)
+    device = torch.device(f'cuda:{args.gpu}')
 
     # fix the seed for reproducibility
     seed = args.seed + utils.get_rank() # rank: distributed training
@@ -61,7 +63,7 @@ def main(args):
     np.random.seed(seed)
     random.seed(seed)
 
-    torch.backends.cudnn.deterministic = True  # reproducibility
+    # torch.backends.cudnn.deterministic = True  # reproducibility
 
     # build model
     model, criterion = build_model(args)
@@ -103,7 +105,8 @@ def main(args):
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
                                 collate_fn=utils.collate_fn, num_workers=args.num_workers)
     data_loader_val = DataLoader(dataset_val, 1, sampler=sampler_val,
-                                drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers)
+                                drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers,
+                                pin_memory=False)
     print(f'val data: {len(dataset_val)}\t train data: {len(dataset_train)}')
 
     # output directory and log 

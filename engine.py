@@ -377,7 +377,7 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
     torch.cuda.empty_cache()
     
     model.eval()
-    gt_determined = 1 if args.dataset_file == 'WuhanMetro' else 100
+    gt_determined = 1 if args.dataset_file == 'WuhanMetro' else 1000000
     # gt_determined = 100
     metric_logger = utils.MetricLogger(delimiter="  ", win_size=len(data_loader))
     header = 'Test:'
@@ -452,7 +452,9 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
 
         # record results
         results = {}
-        toTensor = lambda x: torch.tensor(x).float().cuda()
+        # toTensor = lambda x: torch.tensor(x).float().cuda()
+        toTensor = lambda x: torch.as_tensor(x, dtype=torch.float32, device=device)
+
         results['mae'], results['mse'] = toTensor(mae), toTensor(mse)
         
         if args.dataset_file in ['Ship', 'People', 'Car']:
@@ -471,18 +473,22 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
             results["mae_d"], results["mse_d"], results["pre_d"], results["reca_d"], results["f1_d"], results["abs_d"] = 0, 0, 0, 0, 0, 0
         
         if distributed:
-            # results = utils.reduce_dict(results)
-            gt_cnt_all += [i.cpu().numpy() for i in utils.all_gather(toTensor(gt_cnt))]
-            pd_cnt_all += [i.cpu().numpy() for i in utils.all_gather(toTensor(predict_cnt))]
-            
+            # 关键：不要把标量转 CUDA tensor 再 all_gather
+            gathered_gt = utils.all_gather(int(gt_cnt))
+            gathered_pd = utils.all_gather(int(predict_cnt))
+
+            if utils.is_main_process():
+                gt_cnt_all += gathered_gt
+                pd_cnt_all += gathered_pd
+
             if gt_cnt > gt_determined:
-                gt_cnt_all_d += [i.cpu().numpy() for i in utils.all_gather(toTensor(gt_cnt))]
-                pd_cnt_all_d += [i.cpu().numpy() for i in utils.all_gather(toTensor(predict_cnt))]
-            # print('gt_cnt:',gt_cnt, 'gt_cnt_gather:', len(gt_cnt_all))
-            metric_logger.update(
-                mae=results["mae"],
-                mse=results["mse"],
-            )
+                gathered_gt_d = utils.all_gather(int(gt_cnt))
+                gathered_pd_d = utils.all_gather(int(predict_cnt))
+                if utils.is_main_process():
+                    gt_cnt_all_d += gathered_gt_d
+                    pd_cnt_all_d += gathered_pd_d
+
+            metric_logger.update(mae=results["mae"], mse=results["mse"])
         else:
             if gt_cnt > gt_determined:
                 gt_cnt_all_d.append(gt_cnt)
@@ -544,24 +550,36 @@ def evaluate(model, data_loader, device, epoch=0, vis_dir=None, distributed=Fals
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
+    if distributed and (not utils.is_main_process()):
+        results = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        results["mse"] = math.sqrt(results["mse"])
+        # r2/rmae/rmse/racc 在非主进程不计算，避免依赖空数组
+        results["r2"] = float("nan")
+        results["rmae"] = float("nan")
+        results["rmse"] = float("nan")
+        results["racc"] = float("nan")
+        return results
     gt_cnt_array, pd_cnt_array = np.array(gt_cnt_all), np.array(pd_cnt_all)
     gt_cnt_array_d, pd_cnt_array_d = np.array(gt_cnt_all_d), np.array(pd_cnt_all_d)
     
     results = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     results["mse"] = np.sqrt(results["mse"])
-    results["mse_d"] = np.sqrt(results["mse_d"])
+    # results["mse_d"] = np.sqrt(results["mse_d"])
     
     # print(len(gt_cnt_array), len(pd_cnt_array))
     results["r2"] = r2_score(gt_cnt_array, pd_cnt_array) if args.dataset_file != 'WuhanMetro' else r2_score(gt_cnt_array_d, pd_cnt_array_d)
-    results["r2_d"] = r2_score(gt_cnt_array_d, pd_cnt_array_d)
+    # results["r2_d"] = r2_score(gt_cnt_array_d, pd_cnt_array_d)
     # results["rmae"], results["rmse"] = metrics.compute_relerr(
     #     gt_cnt_array, pd_cnt_array
     # )
     results['rmae'], results['rmse'] = metrics.compute_relerr(gt_cnt_array, pd_cnt_array)
     results["racc"] = metrics.compute_racc(gt_cnt_array, pd_cnt_array)
-    results["rac_d"] = metrics.compute_racc(gt_cnt_array_d, pd_cnt_array_d)
+    # results["rac_d"] = metrics.compute_racc(gt_cnt_array_d, pd_cnt_array_d)
     
     if args.dataset_file in ['Ship', 'People', 'Car']:
+        results["mse_d"] = np.sqrt(results["mse_d"])
+        results["r2_d"] = r2_score(gt_cnt_array_d, pd_cnt_array_d)
+        results["rac_d"] = metrics.compute_racc(gt_cnt_array_d, pd_cnt_array_d)
         order = ["mae", "mae_d",
                 "mse", "mse_d",
                 "Prec", "pre_d",

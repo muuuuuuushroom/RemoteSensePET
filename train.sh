@@ -3,6 +3,7 @@ export DEFAULT_MASTER_PORT=10000
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export DEFAULT_NPROC_PER_NODE=4
 export DEFAULT_CONFIG_FILE_PATH='configs_con/Crowd/SHA.yaml'
+export OMP_NUM_THREADS=4 # Set the number of OpenMP threads
 # 'configs_con/Others/soybeam.yaml'
 # "configs_con/TGRS/Ship.yaml"
 
@@ -19,11 +20,16 @@ echo "nproc_per_node: $NPROC_PER_NODE"
 echo "master_port: $MASTER_PORT"
 echo "config path: $CONFIG_FILE_PATH"
 
-python -m torch.distributed.launch \
-    --nproc_per_node=$NPROC_PER_NODE \
-    --master_port=$MASTER_PORT \
-    --use_env main.py \
-    --cfg="$CONFIG_FILE_PATH" \
+# python -m torch.distributed.launch \
+#     --nproc_per_node=$NPROC_PER_NODE \
+#     --master_port=$MASTER_PORT \
+#     --use_env main.py \
+#     --cfg="$CONFIG_FILE_PATH" \
+torchrun \
+  --nproc_per_node=$NPROC_PER_NODE \
+  --master_port=$MASTER_PORT \
+  main.py \
+  --cfg "$CONFIG_FILE_PATH"
     # --resume="/data/zlt/RemoteSensePET/outputs/RS/Ship/base_s2/best_checkpoint.pth"
 
 
